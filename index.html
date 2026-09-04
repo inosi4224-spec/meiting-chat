@@ -11,6 +11,8 @@
     --bg: #eef8f6;
     --bg-2: #e3f3ef;
     --panel-bg: rgba(255,255,255,0.72);
+    --surface: #ffffff;
+    --surface-hover: #f3fbfa;
     --accent: #3fa392;
     --accent-hover: #328579;
     --text: #2f3d3a;
@@ -22,6 +24,28 @@
     --thinking-bg: #eef4f6;
     --thinking-border: #cfe1e6;
     --thinking-accent: #5c7d86;
+    --disabled-bg: #bcd9d3;
+    --danger-hover-bg: #fde2e2;
+    --danger-hover-text: #c0574f;
+  }
+  :root[data-theme="dark"] {
+    --bg: #141e1b;
+    --bg-2: #0f1715;
+    --panel-bg: rgba(20, 30, 27, 0.75);
+    --surface: #1c2925;
+    --surface-hover: #24332e;
+    --accent: #4fc2ae;
+    --accent-hover: #63d1bd;
+    --text: #e7f2ef;
+    --text-soft: #93aaa5;
+    --border-soft: #2b3f3a;
+    --bubble-border: rgba(255, 255, 255, 0.08);
+    --thinking-bg: #1c2b28;
+    --thinking-border: #33473f;
+    --thinking-accent: #8fb4bb;
+    --disabled-bg: #2b3d38;
+    --danger-hover-bg: #3a2323;
+    --danger-hover-text: #e08b83;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -30,6 +54,7 @@
     background: linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
     color: var(--text);
     overflow: hidden;
+    transition: background 0.2s ease, color 0.2s ease;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   #app {
@@ -43,7 +68,7 @@
   #sidebar {
     width: 260px;
     flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.75);
+    background: var(--panel-bg);
     border-right: 1px solid var(--border-soft);
     display: flex;
     flex-direction: column;
@@ -87,7 +112,7 @@
   }
   .conv-item:hover { background: rgba(63, 163, 146, 0.10); }
   .conv-item.active {
-    background: #fff;
+    background: var(--surface);
     border: 1px solid var(--border-soft);
     font-weight: 600;
   }
@@ -109,7 +134,7 @@
     border-radius: 6px;
     flex-shrink: 0;
   }
-  .conv-delete:hover { background: #fde2e2; color: #c0574f; }
+  .conv-delete:hover { background: var(--danger-hover-bg); color: var(--danger-hover-text); }
 
   #sidebar-backdrop { display: none; }
 
@@ -145,7 +170,7 @@
     padding: 8px 12px;
     border-radius: 10px;
     border: 1px solid var(--border-soft);
-    background: #fff;
+    background: var(--surface);
     font-size: 13px;
     outline: none;
     color: var(--text);
@@ -155,7 +180,7 @@
     padding: 8px 12px;
     border-radius: 10px;
     border: 1px solid var(--border-soft);
-    background: #fff;
+    background: var(--surface);
     font-size: 13px;
     outline: none;
     color: var(--text);
@@ -178,8 +203,8 @@
     color: var(--text-soft);
     border: 1px solid var(--border-soft);
   }
-  header button.secondary:hover:not(:disabled) { background: #fff; color: var(--accent); }
-  #sidebar-toggle-btn {
+  header button.secondary:hover:not(:disabled) { background: var(--surface); color: var(--accent); }
+  #sidebar-toggle-btn, #theme-toggle-btn {
     width: 38px;
     height: 38px;
     padding: 0;
@@ -374,6 +399,12 @@
     color: var(--text-soft);
     opacity: 0.85;
   }
+  .msg-time {
+    margin-top: 4px;
+    font-size: 10.5px;
+    color: var(--text-soft);
+    opacity: 0.7;
+  }
 
   footer {
     padding: 12px 12%;
@@ -428,7 +459,7 @@
     outline: none;
     max-height: 140px;
     min-height: 42px;
-    background: #fff;
+    background: var(--surface);
     color: var(--text);
   }
   #input-row textarea:focus { border-color: var(--accent); }
@@ -437,13 +468,13 @@
     height: 42px;
     border-radius: 50%;
     border: 1px solid var(--border-soft);
-    background: #fff;
+    background: var(--surface);
     color: var(--text-soft);
     font-size: 18px;
     cursor: pointer;
     flex-shrink: 0;
   }
-  .icon-btn:hover { background: #f3fbfa; }
+  .icon-btn:hover { background: var(--surface-hover); }
   #send-btn {
     width: 42px;
     height: 42px;
@@ -456,7 +487,7 @@
     flex-shrink: 0;
   }
   #send-btn:disabled {
-    background: #bcd9d3;
+    background: var(--disabled-bg);
     cursor: not-allowed;
   }
   #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
@@ -472,7 +503,7 @@
   }
   .modal-overlay[hidden] { display: none; }
   .modal-card {
-    background: #fff;
+    background: var(--surface);
     border-radius: 16px;
     border: 1px solid var(--border-soft);
     padding: 20px;
@@ -506,7 +537,7 @@
     resize: vertical;
     outline: none;
     color: var(--text);
-    background: #fff;
+    background: var(--surface);
   }
   .modal-card textarea:focus { border-color: var(--accent); }
   .color-row {
@@ -552,7 +583,7 @@
   .modal-actions .primary { background: var(--accent); color: #fff; }
   .modal-actions .primary:hover { background: var(--accent-hover); }
   .modal-actions .secondary { background: transparent; color: var(--text-soft); border: 1px solid var(--border-soft); }
-  .modal-actions .secondary:hover { background: #f5f9f8; }
+  .modal-actions .secondary:hover { background: var(--surface-hover); }
 
   /* ---------- Mobile ---------- */
   @media (max-width: 800px) {
@@ -605,6 +636,7 @@
         <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
       </select>
       <input type="password" id="api-key" placeholder="填入七牛云 API Key (sk-...)">
+      <button class="secondary" id="theme-toggle-btn" title="切换深色模式">🌙</button>
       <button class="secondary" id="settings-btn">设置</button>
       <button class="secondary" id="clear-btn">清空当前对话</button>
     </header>
@@ -682,6 +714,7 @@ const imgInputEl = document.getElementById('img-input');
 const previewRowEl = document.getElementById('preview-row');
 const clearBtnEl = document.getElementById('clear-btn');
 const totalsBarEl = document.getElementById('totals-bar');
+const themeToggleBtnEl = document.getElementById('theme-toggle-btn');
 const settingsBtnEl = document.getElementById('settings-btn');
 const settingsModalEl = document.getElementById('settings-modal');
 const systemPromptInputEl = document.getElementById('system-prompt-input');
@@ -863,18 +896,91 @@ function getSystemPrompt() {
   return stored !== null ? stored : DEFAULT_SYSTEM_PROMPT;
 }
 
-/* ---------- Bubble colors ---------- */
+/* ---------- Theme (light / dark) ---------- */
+function isDarkMode() {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    themeToggleBtnEl.textContent = '☀️';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    themeToggleBtnEl.textContent = '🌙';
+  }
+  applyColors(savedColors.ai, savedColors.user);
+}
+let currentTheme = localStorage.getItem('meiting-chat-theme') || 'light';
+themeToggleBtnEl.addEventListener('click', () => {
+  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('meiting-chat-theme', currentTheme);
+  applyTheme(currentTheme);
+});
+
+/* ---------- Bubble colors (adapted per theme from the user's picked hex) ---------- */
 let savedColors = { ai: DEFAULT_AI_COLOR, user: DEFAULT_USER_COLOR };
 function loadSavedColors() {
   savedColors.ai = localStorage.getItem('meiting-chat-color-ai') || DEFAULT_AI_COLOR;
   savedColors.user = localStorage.getItem('meiting-chat-color-user') || DEFAULT_USER_COLOR;
 }
+
+function hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const num = parseInt(hex, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) {
+    h = s = 0;
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  const toHex = v => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+function darkenForDarkMode(hex) {
+  try {
+    const { r, g, b } = hexToRgb(hex);
+    const { h, s } = rgbToHsl(r, g, b);
+    return hslToHex(h, Math.min(s, 45), 24);
+  } catch (e) {
+    return hex;
+  }
+}
+
 function applyColors(ai, user) {
-  document.documentElement.style.setProperty('--bubble-ai-bg', ai);
-  document.documentElement.style.setProperty('--bubble-user-bg', user);
+  const aiApplied = isDarkMode() ? darkenForDarkMode(ai) : ai;
+  const userApplied = isDarkMode() ? darkenForDarkMode(user) : user;
+  document.documentElement.style.setProperty('--bubble-ai-bg', aiApplied);
+  document.documentElement.style.setProperty('--bubble-user-bg', userApplied);
 }
 loadSavedColors();
-applyColors(savedColors.ai, savedColors.user);
+applyTheme(currentTheme);
 
 /* ---------- Settings modal ---------- */
 settingsBtnEl.addEventListener('click', () => {
@@ -983,6 +1089,19 @@ function splitAiText(text) {
   return (text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
 }
 
+function formatTimestamp(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatCurrentTimeForPrompt() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `当前时间：${d.getFullYear()}年${pad(d.getMonth() + 1)}月${pad(d.getDate())}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function renderSingleRow(m, textContent, opts) {
   opts = opts || {};
   const row = document.createElement('div');
@@ -1028,21 +1147,29 @@ function renderSingleRow(m, textContent, opts) {
     bubble.appendChild(usageEl);
   }
 
+  if (opts.timestamp) {
+    const timeEl = document.createElement('div');
+    timeEl.className = 'msg-time';
+    timeEl.textContent = formatTimestamp(opts.timestamp);
+    bubble.appendChild(timeEl);
+  }
+
   row.appendChild(bubble);
   return row;
 }
 
 function renderMessageRows(m) {
   if (m.role === 'user') {
-    return [renderSingleRow(m, m.text, { images: m.images })];
+    return [renderSingleRow(m, m.text, { images: m.images, timestamp: m.timestamp })];
   }
   const segments = splitAiText(m.text);
   if (!segments.length) {
-    return [renderSingleRow(m, m.text || '', { thinking: m.thinking, usage: m.usage })];
+    return [renderSingleRow(m, m.text || '', { thinking: m.thinking, usage: m.usage, timestamp: m.timestamp })];
   }
   return segments.map((seg, i) => renderSingleRow(m, seg, {
     thinking: i === 0 ? m.thinking : null,
-    usage: i === segments.length - 1 ? m.usage : null
+    usage: i === segments.length - 1 ? m.usage : null,
+    timestamp: i === segments.length - 1 ? m.timestamp : null
   }));
 }
 
@@ -1105,7 +1232,7 @@ function sleep(ms) {
 async function revealAssistantMessage(m) {
   const segments = splitAiText(m.text);
   if (!segments.length) {
-    chatEl.appendChild(renderSingleRow(m, m.text || '', { thinking: m.thinking, usage: m.usage }));
+    chatEl.appendChild(renderSingleRow(m, m.text || '', { thinking: m.thinking, usage: m.usage, timestamp: m.timestamp }));
     scrollToBottom();
     return;
   }
@@ -1117,7 +1244,8 @@ async function revealAssistantMessage(m) {
     typingRow.remove();
     const row = renderSingleRow(m, segments[i], {
       thinking: i === 0 ? m.thinking : null,
-      usage: i === segments.length - 1 ? m.usage : null
+      usage: i === segments.length - 1 ? m.usage : null,
+      timestamp: i === segments.length - 1 ? m.timestamp : null
     });
     chatEl.appendChild(row);
     scrollToBottom();
@@ -1220,7 +1348,7 @@ async function sendMessage() {
     return;
   }
 
-  const userMsg = { role: 'user', text, images: pendingImages };
+  const userMsg = { role: 'user', text, images: pendingImages, timestamp: Date.now() };
   messages.push(userMsg);
   saveMessages();
   renderAll();
@@ -1251,7 +1379,7 @@ async function sendMessage() {
       body: JSON.stringify({
         model: modelSelectEl.value,
         max_tokens: MAX_TOKENS,
-        system: getSystemPrompt() || undefined,
+        system: [getSystemPrompt(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n'),
         thinking: THINKING_CONFIG_BY_MODEL[modelSelectEl.value] || { type: 'adaptive' },
         stream: true,
         messages: apiMessages
@@ -1268,7 +1396,7 @@ async function sendMessage() {
       }
       typingRow.remove();
       messages.pop();
-      messages.push({ role: 'assistant', text: `⚠️ 请求出错：${errMsg}` });
+      messages.push({ role: 'assistant', text: `⚠️ 请求出错：${errMsg}`, timestamp: Date.now() });
       saveMessages();
       renderAll();
       return;
@@ -1299,6 +1427,7 @@ async function sendMessage() {
     }
 
     assistantMsg.streaming = false;
+    assistantMsg.timestamp = Date.now();
     typingRow.remove();
     await revealAssistantMessage(assistantMsg);
     saveMessages();
@@ -1306,7 +1435,7 @@ async function sendMessage() {
   } catch (err) {
     typingRow.remove();
     messages.pop();
-    messages.push({ role: 'assistant', text: `⚠️ 网络请求失败：${err.message}` });
+    messages.push({ role: 'assistant', text: `⚠️ 网络请求失败：${err.message}`, timestamp: Date.now() });
     saveMessages();
     renderAll();
   } finally {
