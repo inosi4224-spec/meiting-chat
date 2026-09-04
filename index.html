@@ -705,13 +705,24 @@
     border: 4px solid var(--surface);
     margin-top: -42px;
     background: var(--surface);
+    cursor: pointer;
   }
   .profile-card-name {
     margin-top: 10px;
     font-size: 16px;
     font-weight: 600;
     color: var(--text);
+    text-align: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    padding: 4px 8px;
+    font-family: inherit;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
   }
+  .profile-card-name:hover, .profile-card-name:focus { border-color: var(--border-soft); background: var(--surface); }
   .profile-card-bio {
     width: 100%;
     margin-top: 10px;
@@ -874,8 +885,9 @@
           <input type="file" id="profile-bg-input" accept="image/*" style="display:none">
         </div>
         <div class="profile-card-body">
-          <img class="profile-card-avatar" id="profile-card-avatar">
-          <div class="profile-card-name" id="profile-card-name"></div>
+          <img class="profile-card-avatar" id="profile-card-avatar" title="点击更换头像">
+          <input type="file" id="profile-card-avatar-input" accept="image/*" style="display:none">
+          <input type="text" class="profile-card-name" id="profile-card-name" maxlength="20" placeholder="网名">
           <textarea class="profile-card-bio" id="profile-card-bio" placeholder="写一句个性签名…" maxlength="60"></textarea>
         </div>
         <div class="modal-actions">
@@ -953,6 +965,7 @@ const profileBgEl = document.getElementById('profile-bg');
 const profileBgBtnEl = document.getElementById('profile-bg-btn');
 const profileBgInputEl = document.getElementById('profile-bg-input');
 const profileCardAvatarEl = document.getElementById('profile-card-avatar');
+const profileCardAvatarInputEl = document.getElementById('profile-card-avatar-input');
 const profileCardNameEl = document.getElementById('profile-card-name');
 const profileCardBioEl = document.getElementById('profile-card-bio');
 const profileCardCloseEl = document.getElementById('profile-card-close');
@@ -1146,7 +1159,18 @@ function getProfile(role) {
 }
 
 function saveProfile(role, profile) {
-  localStorage.setItem(`meiting-chat-profile-${role}`, JSON.stringify(profile));
+  try {
+    localStorage.setItem(`meiting-chat-profile-${role}`, JSON.stringify(profile));
+    return true;
+  } catch (e) {
+    // Most likely the avatar/background image pushed this over the localStorage quota.
+    // Retry without the image so the nickname/bio the user just typed isn't lost too.
+    try {
+      localStorage.setItem(`meiting-chat-profile-${role}`, JSON.stringify(Object.assign({}, profile, { avatar: null, background: null })));
+    } catch (e2) {}
+    alert('图片过大，本地存储空间不足，头像/背景图未能保存；昵称等其他修改已保存。请更换更小的图片后重试。');
+    return false;
+  }
 }
 
 function escapeXml(s) {
@@ -1167,6 +1191,33 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+/* Downscales an image data URL so avatars/backgrounds (often multi-MB phone
+   photos) don't blow past the localStorage quota once base64-encoded. */
+function resizeImageDataUrl(dataUrl, maxSize) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        if (width > height) {
+          height = Math.round(height * maxSize / width);
+          width = maxSize;
+        } else {
+          width = Math.round(width * maxSize / height);
+          height = maxSize;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
   });
 }
 
@@ -1289,7 +1340,8 @@ aiAvatarPreviewEl.addEventListener('click', () => aiAvatarInputEl.click());
 userAvatarInputEl.addEventListener('change', async () => {
   const file = userAvatarInputEl.files && userAvatarInputEl.files[0];
   if (!file) return;
-  profileDraft.user.avatar = await fileToDataUrl(file);
+  const raw = await fileToDataUrl(file);
+  profileDraft.user.avatar = await resizeImageDataUrl(raw, 200);
   refreshProfilePreview('user');
   userAvatarInputEl.value = '';
 });
@@ -1297,7 +1349,8 @@ userAvatarInputEl.addEventListener('change', async () => {
 aiAvatarInputEl.addEventListener('change', async () => {
   const file = aiAvatarInputEl.files && aiAvatarInputEl.files[0];
   if (!file) return;
-  profileDraft.ai.avatar = await fileToDataUrl(file);
+  const raw = await fileToDataUrl(file);
+  profileDraft.ai.avatar = await resizeImageDataUrl(raw, 200);
   refreshProfilePreview('ai');
   aiAvatarInputEl.value = '';
 });
@@ -1353,7 +1406,7 @@ function openProfileCard(role) {
   profileCardRole = role;
   const profile = getProfile(role);
   profileCardAvatarEl.src = profile.avatar || getDefaultAvatar(role, profile.nickname);
-  profileCardNameEl.textContent = profile.nickname;
+  profileCardNameEl.value = profile.nickname;
   profileCardBioEl.value = profile.bio || '';
   profileBgEl.style.backgroundImage = profile.background ? `url(${profile.background})` : '';
   profileModalEl.hidden = false;
@@ -1376,11 +1429,44 @@ profileCardBioEl.addEventListener('input', () => {
   saveProfile(profileCardRole, profile);
 });
 
+profileCardNameEl.addEventListener('input', () => {
+  if (!profileCardRole) return;
+  const profile = getProfile(profileCardRole);
+  profile.nickname = profileCardNameEl.value;
+  saveProfile(profileCardRole, profile);
+  renderAll();
+});
+profileCardNameEl.addEventListener('blur', () => {
+  if (!profileCardRole) return;
+  const profile = getProfile(profileCardRole);
+  if (!profile.nickname || !profile.nickname.trim()) {
+    profile.nickname = DEFAULT_PROFILES[profileCardRole].nickname;
+    profileCardNameEl.value = profile.nickname;
+    saveProfile(profileCardRole, profile);
+    renderAll();
+  }
+});
+
+profileCardAvatarEl.addEventListener('click', () => profileCardAvatarInputEl.click());
+profileCardAvatarInputEl.addEventListener('change', async () => {
+  const file = profileCardAvatarInputEl.files && profileCardAvatarInputEl.files[0];
+  if (!file || !profileCardRole) return;
+  const raw = await fileToDataUrl(file);
+  const dataUrl = await resizeImageDataUrl(raw, 200);
+  const profile = getProfile(profileCardRole);
+  profile.avatar = dataUrl;
+  saveProfile(profileCardRole, profile);
+  profileCardAvatarEl.src = dataUrl;
+  profileCardAvatarInputEl.value = '';
+  renderAll();
+});
+
 profileBgBtnEl.addEventListener('click', () => profileBgInputEl.click());
 profileBgInputEl.addEventListener('change', async () => {
   const file = profileBgInputEl.files && profileBgInputEl.files[0];
   if (!file || !profileCardRole) return;
-  const dataUrl = await fileToDataUrl(file);
+  const raw = await fileToDataUrl(file);
+  const dataUrl = await resizeImageDataUrl(raw, 960);
   const profile = getProfile(profileCardRole);
   profile.background = dataUrl;
   saveProfile(profileCardRole, profile);
