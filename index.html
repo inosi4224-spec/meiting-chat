@@ -92,6 +92,36 @@
     font-size: 13px;
   }
   #new-conv-btn:hover:not(:disabled) { background: var(--accent-hover); }
+  #nav-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border-soft);
+    flex-shrink: 0;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .nav-item:hover { background: rgba(63, 163, 146, 0.10); }
+  .nav-item.active {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .nav-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
   #conv-list {
     flex: 1;
     overflow-y: auto;
@@ -706,6 +736,8 @@
     margin-top: -42px;
     background: var(--surface);
     cursor: pointer;
+    position: relative;
+    z-index: 1;
   }
   .profile-card-name {
     margin-top: 10px;
@@ -759,6 +791,28 @@
   .modal-actions .secondary { background: transparent; color: var(--text-soft); border: 1px solid var(--border-soft); }
   .modal-actions .secondary:hover { background: var(--surface-hover); }
 
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%) translateY(8px);
+    background: rgba(30, 40, 38, 0.88);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    z-index: 400;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
   /* ---------- Mobile ---------- */
   @media (max-width: 800px) {
     #sidebar {
@@ -798,6 +852,16 @@
     <div id="sidebar-header">
       <button id="new-conv-btn">＋ 新建对话</button>
     </div>
+    <nav id="nav-menu">
+      <button type="button" class="nav-item active" data-nav="chat"><span class="nav-icon">💬</span><span class="nav-label">聊天</span></button>
+      <button type="button" class="nav-item" data-nav="memory"><span class="nav-icon">🧠</span><span class="nav-label">记忆库</span></button>
+      <button type="button" class="nav-item" data-nav="diary"><span class="nav-icon">📔</span><span class="nav-label">日记</span></button>
+      <button type="button" class="nav-item" data-nav="slowletter"><span class="nav-icon">💌</span><span class="nav-label">慢信</span></button>
+      <button type="button" class="nav-item" data-nav="album"><span class="nav-icon">🖼️</span><span class="nav-label">相册</span></button>
+      <button type="button" class="nav-item" data-nav="period"><span class="nav-icon">🩸</span><span class="nav-label">经期</span></button>
+      <button type="button" class="nav-item" data-nav="milestone"><span class="nav-icon">🚩</span><span class="nav-label">里程碑</span></button>
+      <button type="button" class="nav-item" data-nav="settings"><span class="nav-icon">⚙️</span><span class="nav-label">设置</span></button>
+    </nav>
     <div id="conv-list"></div>
   </div>
   <div id="sidebar-backdrop"></div>
@@ -908,6 +972,8 @@
   </div>
 </div>
 
+<div id="toast"></div>
+
 <script>
 const API_ENDPOINT = "https://api.qnaigc.com/v1/messages";
 const MAX_TOKENS = 8000;
@@ -933,6 +999,8 @@ const sidebarToggleBtnEl = document.getElementById('sidebar-toggle-btn');
 const sidebarBackdropEl = document.getElementById('sidebar-backdrop');
 const newConvBtnEl = document.getElementById('new-conv-btn');
 const convListEl = document.getElementById('conv-list');
+const navMenuEl = document.getElementById('nav-menu');
+const toastEl = document.getElementById('toast');
 
 const chatEl = document.getElementById('chat');
 const apiKeyEl = document.getElementById('api-key');
@@ -1094,6 +1162,26 @@ newConvBtnEl.addEventListener('click', () => {
   renderAll();
   renderSidebar();
   closeSidebarOnMobile();
+});
+
+/* ---------- Toast ---------- */
+let toastTimer = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+}
+
+/* ---------- Nav menu (placeholder sections) ---------- */
+navMenuEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.nav-item');
+  if (!btn) return;
+  if (btn.dataset.nav === 'chat') {
+    closeSidebarOnMobile();
+    return;
+  }
+  showToast('功能开发中');
 });
 
 /* ---------- Sidebar open/close ---------- */
