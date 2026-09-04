@@ -234,12 +234,41 @@
   .msg-row {
     display: flex;
     width: 100%;
+    gap: 8px;
+    align-items: flex-end;
   }
   .msg-row.ai { justify-content: flex-start; }
   .msg-row.user { justify-content: flex-end; }
 
-  .bubble {
+  .msg-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: 1px solid var(--border-soft);
+    background: var(--surface);
+  }
+
+  .msg-stack {
+    display: flex;
+    flex-direction: column;
     max-width: 72%;
+    min-width: 0;
+  }
+  .msg-row.ai .msg-stack { align-items: flex-start; }
+  .msg-row.user .msg-stack { align-items: flex-end; }
+
+  .msg-nickname {
+    font-size: 11.5px;
+    color: var(--text-soft);
+    margin-bottom: 3px;
+    padding: 0 4px;
+  }
+
+  .bubble {
+    max-width: 100%;
     padding: 12px 16px;
     border-radius: 18px;
     line-height: 1.55;
@@ -590,6 +619,117 @@
     color: var(--text-soft);
     margin-top: 2px;
   }
+
+  /* ---------- Profile editing (in settings) ---------- */
+  .profile-edit-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .profile-edit-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 180px;
+  }
+  .profile-avatar-preview {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    cursor: pointer;
+    border: 1px solid var(--border-soft);
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  .profile-edit-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .profile-edit-info span {
+    font-size: 11px;
+    color: var(--text-soft);
+  }
+  .profile-edit-info input[type="text"] {
+    padding: 6px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    width: 100%;
+  }
+  .profile-edit-info input[type="text"]:focus { border-color: var(--accent); }
+
+  /* ---------- Profile card (click an avatar) ---------- */
+  .profile-card { width: min(380px, 90vw); }
+  .profile-bg {
+    margin: -20px -20px 0 -20px;
+    height: 110px;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(135deg, var(--bubble-ai-bg), var(--bubble-user-bg));
+    background-size: cover;
+    background-position: center;
+    position: relative;
+  }
+  .profile-bg-btn {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .profile-bg-btn:hover { background: rgba(0, 0, 0, 0.6); }
+  .profile-card-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .profile-card-avatar {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 4px solid var(--surface);
+    margin-top: -42px;
+    background: var(--surface);
+  }
+  .profile-card-name {
+    margin-top: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .profile-card-bio {
+    width: 100%;
+    margin-top: 10px;
+    min-height: 50px;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text-soft);
+    background: var(--surface);
+    resize: vertical;
+    outline: none;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  .profile-card-bio:focus { border-color: var(--accent); }
+
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -630,7 +770,8 @@
     header h1 { font-size: 15px; }
     #chat { padding: 14px 4%; }
     footer { padding: 10px 4%; }
-    .bubble { max-width: 88%; }
+    .msg-stack { max-width: 82%; }
+    .msg-avatar { width: 28px; height: 28px; }
     .msg-images img { max-width: 130px; max-height: 130px; }
   }
   @media (max-width: 480px) {
@@ -690,6 +831,27 @@
           </div>
         </div>
         <div class="settings-section">
+          <label class="settings-label">个人资料</label>
+          <div class="profile-edit-row">
+            <div class="profile-edit-field">
+              <img class="profile-avatar-preview" id="user-avatar-preview" title="点击上传头像">
+              <input type="file" id="user-avatar-input" accept="image/*" style="display:none">
+              <div class="profile-edit-info">
+                <span>我的头像 / 网名</span>
+                <input type="text" id="user-nickname-input" maxlength="20">
+              </div>
+            </div>
+            <div class="profile-edit-field">
+              <img class="profile-avatar-preview" id="ai-avatar-preview" title="点击上传头像">
+              <input type="file" id="ai-avatar-input" accept="image/*" style="display:none">
+              <div class="profile-edit-info">
+                <span>AI 头像 / 网名</span>
+                <input type="text" id="ai-nickname-input" maxlength="20">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
           <label class="settings-label">分条发送</label>
           <label class="toggle-row">
             <input type="checkbox" id="split-toggle-input">
@@ -701,6 +863,23 @@
         <div class="modal-actions">
           <button class="secondary" id="settings-cancel">取消</button>
           <button class="primary" id="settings-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="profile-modal" hidden>
+      <div class="modal-card profile-card">
+        <div class="profile-bg" id="profile-bg">
+          <button type="button" class="profile-bg-btn" id="profile-bg-btn" title="更换背景图">🖼️</button>
+          <input type="file" id="profile-bg-input" accept="image/*" style="display:none">
+        </div>
+        <div class="profile-card-body">
+          <img class="profile-card-avatar" id="profile-card-avatar">
+          <div class="profile-card-name" id="profile-card-name"></div>
+          <textarea class="profile-card-bio" id="profile-card-bio" placeholder="写一句个性签名…" maxlength="60"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" id="profile-card-close">关闭</button>
         </div>
       </div>
     </div>
@@ -731,6 +910,10 @@ const DEFAULT_USER_COLOR = '#dcf6e1';
 const SPLIT_MAX_LENGTH = 200;
 const SPLIT_DELAY_MIN_MS = 800;
 const SPLIT_DELAY_RANGE_MS = 700;
+const DEFAULT_PROFILES = {
+  user: { avatar: null, nickname: '美婷', bio: '', background: null },
+  ai: { avatar: null, nickname: 'cc', bio: '', background: null }
+};
 
 /* ---------- DOM refs ---------- */
 const appEl = document.getElementById('app');
@@ -759,6 +942,20 @@ const aiColorInputEl = document.getElementById('ai-color-input');
 const userColorInputEl = document.getElementById('user-color-input');
 const resetColorsBtnEl = document.getElementById('reset-colors-btn');
 const splitToggleInputEl = document.getElementById('split-toggle-input');
+const userAvatarPreviewEl = document.getElementById('user-avatar-preview');
+const userAvatarInputEl = document.getElementById('user-avatar-input');
+const userNicknameInputEl = document.getElementById('user-nickname-input');
+const aiAvatarPreviewEl = document.getElementById('ai-avatar-preview');
+const aiAvatarInputEl = document.getElementById('ai-avatar-input');
+const aiNicknameInputEl = document.getElementById('ai-nickname-input');
+const profileModalEl = document.getElementById('profile-modal');
+const profileBgEl = document.getElementById('profile-bg');
+const profileBgBtnEl = document.getElementById('profile-bg-btn');
+const profileBgInputEl = document.getElementById('profile-bg-input');
+const profileCardAvatarEl = document.getElementById('profile-card-avatar');
+const profileCardNameEl = document.getElementById('profile-card-name');
+const profileCardBioEl = document.getElementById('profile-card-bio');
+const profileCardCloseEl = document.getElementById('profile-card-close');
 
 /* ---------- Conversation state ---------- */
 let conversations = loadConversations();
@@ -937,6 +1134,42 @@ function getSplitEnabled() {
   return stored === null ? true : stored === 'true';
 }
 
+/* ---------- Profiles (avatar / nickname / bio / background) ---------- */
+function getProfile(role) {
+  try {
+    const raw = localStorage.getItem(`meiting-chat-profile-${role}`);
+    if (raw) {
+      return Object.assign({}, DEFAULT_PROFILES[role], JSON.parse(raw));
+    }
+  } catch (e) {}
+  return Object.assign({}, DEFAULT_PROFILES[role]);
+}
+
+function saveProfile(role, profile) {
+  localStorage.setItem(`meiting-chat-profile-${role}`, JSON.stringify(profile));
+}
+
+function escapeXml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function getDefaultAvatar(role, nickname) {
+  const fallback = role === 'user' ? '美' : 'c';
+  const initial = escapeXml(((nickname || fallback).trim().charAt(0) || fallback).toUpperCase());
+  const bg = role === 'user' ? '#8fd6ab' : '#8fc3ea';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="32" fill="${bg}"/><text x="32" y="42" font-size="26" font-family="sans-serif" text-anchor="middle" fill="#ffffff">${initial}</text></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 /* ---------- Theme (light / dark) ---------- */
 function isDarkMode() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1024,14 +1257,58 @@ loadSavedColors();
 applyTheme(currentTheme);
 
 /* ---------- Settings modal ---------- */
+let profileDraft = { user: null, ai: null };
+
+function refreshProfilePreview(role) {
+  const draft = profileDraft[role];
+  const previewEl = role === 'user' ? userAvatarPreviewEl : aiAvatarPreviewEl;
+  previewEl.src = draft.avatar || getDefaultAvatar(role, draft.nickname);
+}
+
 settingsBtnEl.addEventListener('click', () => {
   systemPromptInputEl.value = getSystemPrompt();
   aiColorInputEl.value = savedColors.ai;
   userColorInputEl.value = savedColors.user;
   applyColors(savedColors.ai, savedColors.user);
   splitToggleInputEl.checked = getSplitEnabled();
+
+  profileDraft.user = getProfile('user');
+  profileDraft.ai = getProfile('ai');
+  userNicknameInputEl.value = profileDraft.user.nickname;
+  aiNicknameInputEl.value = profileDraft.ai.nickname;
+  refreshProfilePreview('user');
+  refreshProfilePreview('ai');
+
   settingsModalEl.hidden = false;
   systemPromptInputEl.focus();
+});
+
+userAvatarPreviewEl.addEventListener('click', () => userAvatarInputEl.click());
+aiAvatarPreviewEl.addEventListener('click', () => aiAvatarInputEl.click());
+
+userAvatarInputEl.addEventListener('change', async () => {
+  const file = userAvatarInputEl.files && userAvatarInputEl.files[0];
+  if (!file) return;
+  profileDraft.user.avatar = await fileToDataUrl(file);
+  refreshProfilePreview('user');
+  userAvatarInputEl.value = '';
+});
+
+aiAvatarInputEl.addEventListener('change', async () => {
+  const file = aiAvatarInputEl.files && aiAvatarInputEl.files[0];
+  if (!file) return;
+  profileDraft.ai.avatar = await fileToDataUrl(file);
+  refreshProfilePreview('ai');
+  aiAvatarInputEl.value = '';
+});
+
+userNicknameInputEl.addEventListener('input', () => {
+  profileDraft.user.nickname = userNicknameInputEl.value;
+  if (!profileDraft.user.avatar) refreshProfilePreview('user');
+});
+aiNicknameInputEl.addEventListener('input', () => {
+  profileDraft.ai.nickname = aiNicknameInputEl.value;
+  if (!profileDraft.ai.avatar) refreshProfilePreview('ai');
 });
 
 function closeSettingsWithoutSaving() {
@@ -1059,7 +1336,56 @@ settingsSaveEl.addEventListener('click', () => {
   localStorage.setItem('meiting-chat-color-user', savedColors.user);
   applyColors(savedColors.ai, savedColors.user);
   localStorage.setItem('meiting-chat-split-enabled', String(splitToggleInputEl.checked));
+
+  profileDraft.user.nickname = userNicknameInputEl.value.trim() || DEFAULT_PROFILES.user.nickname;
+  profileDraft.ai.nickname = aiNicknameInputEl.value.trim() || DEFAULT_PROFILES.ai.nickname;
+  saveProfile('user', profileDraft.user);
+  saveProfile('ai', profileDraft.ai);
+
   settingsModalEl.hidden = true;
+  renderAll();
+});
+
+/* ---------- Profile card (click an avatar) ---------- */
+let profileCardRole = null;
+
+function openProfileCard(role) {
+  profileCardRole = role;
+  const profile = getProfile(role);
+  profileCardAvatarEl.src = profile.avatar || getDefaultAvatar(role, profile.nickname);
+  profileCardNameEl.textContent = profile.nickname;
+  profileCardBioEl.value = profile.bio || '';
+  profileBgEl.style.backgroundImage = profile.background ? `url(${profile.background})` : '';
+  profileModalEl.hidden = false;
+}
+
+function closeProfileCard() {
+  profileModalEl.hidden = true;
+  profileCardRole = null;
+}
+
+profileCardCloseEl.addEventListener('click', closeProfileCard);
+profileModalEl.addEventListener('click', (e) => {
+  if (e.target === profileModalEl) closeProfileCard();
+});
+
+profileCardBioEl.addEventListener('input', () => {
+  if (!profileCardRole) return;
+  const profile = getProfile(profileCardRole);
+  profile.bio = profileCardBioEl.value;
+  saveProfile(profileCardRole, profile);
+});
+
+profileBgBtnEl.addEventListener('click', () => profileBgInputEl.click());
+profileBgInputEl.addEventListener('change', async () => {
+  const file = profileBgInputEl.files && profileBgInputEl.files[0];
+  if (!file || !profileCardRole) return;
+  const dataUrl = await fileToDataUrl(file);
+  const profile = getProfile(profileCardRole);
+  profile.background = dataUrl;
+  saveProfile(profileCardRole, profile);
+  profileBgEl.style.backgroundImage = `url(${dataUrl})`;
+  profileBgInputEl.value = '';
 });
 
 /* ---------- Message persistence ---------- */
@@ -1147,8 +1473,27 @@ function formatCurrentTimeForPrompt() {
 
 function renderSingleRow(m, textContent, opts) {
   opts = opts || {};
+  const role = m.role === 'user' ? 'user' : 'ai';
+  const profile = getProfile(role);
+
   const row = document.createElement('div');
-  row.className = 'msg-row ' + (m.role === 'user' ? 'user' : 'ai');
+  row.className = 'msg-row ' + role;
+
+  const avatarEl = document.createElement('img');
+  avatarEl.className = 'msg-avatar';
+  avatarEl.src = profile.avatar || getDefaultAvatar(role, profile.nickname);
+  avatarEl.alt = profile.nickname;
+  avatarEl.title = profile.nickname;
+  avatarEl.addEventListener('click', () => openProfileCard(role));
+
+  const stack = document.createElement('div');
+  stack.className = 'msg-stack';
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'msg-nickname';
+  nameEl.textContent = profile.nickname;
+  stack.appendChild(nameEl);
+
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
 
@@ -1197,7 +1542,14 @@ function renderSingleRow(m, textContent, opts) {
     bubble.appendChild(timeEl);
   }
 
-  row.appendChild(bubble);
+  stack.appendChild(bubble);
+  if (role === 'user') {
+    row.appendChild(stack);
+    row.appendChild(avatarEl);
+  } else {
+    row.appendChild(avatarEl);
+    row.appendChild(stack);
+  }
   return row;
 }
 
@@ -1264,8 +1616,19 @@ function scrollToBottom() {
 
 /* ---------- Typing indicator + staged reveal ---------- */
 function createTypingRow() {
+  const profile = getProfile('ai');
   const row = document.createElement('div');
   row.className = 'msg-row ai';
+
+  const avatarEl = document.createElement('img');
+  avatarEl.className = 'msg-avatar';
+  avatarEl.src = profile.avatar || getDefaultAvatar('ai', profile.nickname);
+  avatarEl.alt = profile.nickname;
+  avatarEl.addEventListener('click', () => openProfileCard('ai'));
+
+  const stack = document.createElement('div');
+  stack.className = 'msg-stack';
+
   const bubble = document.createElement('div');
   bubble.className = 'bubble typing-bubble';
   const label = document.createElement('span');
@@ -1276,7 +1639,10 @@ function createTypingRow() {
   dots.innerHTML = '<span></span><span></span><span></span>';
   bubble.appendChild(label);
   bubble.appendChild(dots);
-  row.appendChild(bubble);
+
+  stack.appendChild(bubble);
+  row.appendChild(avatarEl);
+  row.appendChild(stack);
   return row;
 }
 
