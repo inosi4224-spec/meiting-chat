@@ -791,6 +791,43 @@
   .modal-actions .secondary { background: transparent; color: var(--text-soft); border: 1px solid var(--border-soft); }
   .modal-actions .secondary:hover { background: var(--surface-hover); }
 
+  /* ---------- Memory library (记忆库) ---------- */
+  .memory-search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .memory-search-row input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border-soft);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .memory-search-row input:focus { border-color: var(--accent); }
+  .memory-search-row button {
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .memory-search-row button:hover:not(:disabled) { background: var(--accent-hover); }
+  .memory-results { max-height: 340px; overflow-y: auto; }
+  .memory-result-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    background: var(--surface);
+  }
+  .memory-status { text-align: center; color: var(--text-soft); font-size: 12.5px; padding: 10px 0; }
+
   /* ---------- Toast ---------- */
   #toast {
     position: fixed;
@@ -942,6 +979,22 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="memory-modal" hidden>
+      <div class="modal-card">
+        <h2>记忆库</h2>
+        <div class="settings-section">
+          <div class="memory-search-row">
+            <input type="text" id="memory-search-input" placeholder="搜索记忆…">
+            <button type="button" id="memory-search-btn">搜索</button>
+          </div>
+          <div class="memory-results" id="memory-results"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" id="memory-close">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="profile-modal" hidden>
       <div class="modal-card profile-card">
         <div class="profile-bg" id="profile-bg">
@@ -976,6 +1029,7 @@
 
 <script>
 const API_ENDPOINT = "https://api.qnaigc.com/v1/messages";
+const LATENT_ENDPOINT = "http://127.0.0.1:8765/mcp";
 const MAX_TOKENS = 8000;
 const THINKING_CONFIG_BY_MODEL = {
   'claude-opus-4-6': { type: 'adaptive', display: 'summarized' },
@@ -1001,6 +1055,11 @@ const newConvBtnEl = document.getElementById('new-conv-btn');
 const convListEl = document.getElementById('conv-list');
 const navMenuEl = document.getElementById('nav-menu');
 const toastEl = document.getElementById('toast');
+const memoryModalEl = document.getElementById('memory-modal');
+const memorySearchInputEl = document.getElementById('memory-search-input');
+const memorySearchBtnEl = document.getElementById('memory-search-btn');
+const memoryResultsEl = document.getElementById('memory-results');
+const memoryCloseEl = document.getElementById('memory-close');
 
 const chatEl = document.getElementById('chat');
 const apiKeyEl = document.getElementById('api-key');
@@ -1097,12 +1156,34 @@ function getCurrentConversation() {
 }
 
 function createConversation() {
-  const conv = { id: genId(), title: '新对话', messages: [], updatedAt: Date.now() };
+  const conv = { id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '' };
   conversations.unshift(conv);
   currentId = conv.id;
   localStorage.setItem('meiting-chat-current-id', currentId);
   saveConversations();
+  fetchSessionMemoryFor(conv.id);
   return conv;
+}
+
+function getMemoryContext() {
+  const conv = getCurrentConversation();
+  return (conv && conv.memoryContext) || '';
+}
+
+/* 新对话建立时自动拉一次历史记忆摘要，存进这条对话自己的 memoryContext——
+   之后每条消息发送时都带上，不用每条消息都重新调用 latent_session_start。
+   拉取失败（服务没启动/CORS 被拒）不影响正常聊天，只是这条对话拿不到记忆背景。 */
+async function fetchSessionMemoryFor(convId) {
+  try {
+    const text = await callLatentTool('latent_session_start', {});
+    const conv = conversations.find(c => c.id === convId);
+    if (conv && text) {
+      conv.memoryContext = text;
+      saveConversations();
+    }
+  } catch (e) {
+    console.warn('latent_session_start 获取失败：', e.message);
+  }
 }
 
 function switchConversation(id) {
@@ -1173,11 +1254,98 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
 }
 
-/* ---------- Nav menu (placeholder sections) ---------- */
+/* ---------- Latent memory integration ----------
+   本地记忆服务只监听 127.0.0.1，走 MCP 的 Streamable HTTP（JSON-RPC over POST）。
+   服务端对 Origin 做了 DNS-rebinding 防护，只信任 localhost/127.0.0.1/::1——
+   所以这个页面必须通过 http://localhost 之类的地址访问（例如本地起一个静态
+   服务器），直接双击用 file:// 打开的话 Origin 是 null，会被服务端拒绝。 */
+async function callLatentTool(name, args) {
+  const res = await fetch(LATENT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: { name, arguments: args || {} }
+    })
+  });
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new Error(`HTTP ${res.status}：记忆服务返回的不是合法 JSON`);
+  }
+  if (!res.ok) {
+    throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+  }
+  if (data.error) {
+    throw new Error(data.error.message || '记忆服务返回错误');
+  }
+  const result = data.result || {};
+  const text = (result.content && result.content[0] && result.content[0].text) || '';
+  if (result.isError) {
+    throw new Error(text || '记忆服务执行出错');
+  }
+  return text;
+}
+
+/* ---------- Memory library modal (手动搜索) ---------- */
+function openMemoryModal() {
+  memoryResultsEl.innerHTML = '';
+  memorySearchInputEl.value = '';
+  memoryModalEl.hidden = false;
+  memorySearchInputEl.focus();
+}
+function closeMemoryModal() {
+  memoryModalEl.hidden = true;
+}
+memoryCloseEl.addEventListener('click', closeMemoryModal);
+memoryModalEl.addEventListener('click', (e) => {
+  if (e.target === memoryModalEl) closeMemoryModal();
+});
+
+async function runMemorySearch() {
+  const query = memorySearchInputEl.value.trim();
+  if (!query) return;
+  memorySearchBtnEl.disabled = true;
+  memoryResultsEl.innerHTML = '<div class="memory-status">搜索中…</div>';
+  try {
+    const text = await callLatentTool('latent_search', { query, topN: 8 });
+    const item = document.createElement('div');
+    item.className = 'memory-result-item';
+    item.textContent = text || '没有找到相关记忆。';
+    memoryResultsEl.innerHTML = '';
+    memoryResultsEl.appendChild(item);
+  } catch (e) {
+    memoryResultsEl.innerHTML =
+      `<div class="memory-status">搜索失败：${escapeHtml(e.message)}（请确认本地记忆服务已启动，`
+      + `且本页面是通过 http://localhost 访问，而不是直接打开本地文件）</div>`;
+  } finally {
+    memorySearchBtnEl.disabled = false;
+  }
+}
+memorySearchBtnEl.addEventListener('click', runMemorySearch);
+memorySearchInputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    runMemorySearch();
+  }
+});
+
+/* ---------- Nav menu ---------- */
 navMenuEl.addEventListener('click', (e) => {
   const btn = e.target.closest('.nav-item');
   if (!btn) return;
   if (btn.dataset.nav === 'chat') {
+    closeSidebarOnMobile();
+    return;
+  }
+  if (btn.dataset.nav === 'memory') {
+    openMemoryModal();
     closeSidebarOnMobile();
     return;
   }
@@ -1983,7 +2151,7 @@ async function sendMessage() {
       body: JSON.stringify({
         model: modelSelectEl.value,
         max_tokens: MAX_TOKENS,
-        system: [getSystemPrompt(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n'),
+        system: [getSystemPrompt(), getMemoryContext(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n'),
         thinking: THINKING_CONFIG_BY_MODEL[modelSelectEl.value] || { type: 'adaptive' },
         stream: true,
         messages: apiMessages
