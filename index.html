@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Meiting Chat</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#141e1b">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Meiting Chat">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <style>
@@ -1138,6 +1145,34 @@
     transform: translateX(-50%) translateY(0);
   }
 
+  /* ---------- SW update banner ---------- */
+  #sw-update-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%) translateY(12px);
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    z-index: 500;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #sw-update-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+  }
+  #sw-update-toast span { text-decoration: underline; }
+
   /* ---------- Mobile ---------- */
   @media (max-width: 800px) {
     #sidebar {
@@ -1552,6 +1587,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="sw-update-toast"><span>已更新到最新版本，点击刷新</span></div>
 <div id="drop-overlay" hidden><div id="drop-overlay-text">松开发送图片</div></div>
 
 <script>
@@ -1637,6 +1673,7 @@ const filePreviewCloseEl = document.getElementById('file-preview-close');
 const dropOverlayEl = document.getElementById('drop-overlay');
 const navMenuEl = document.getElementById('nav-menu');
 const toastEl = document.getElementById('toast');
+const swUpdateToastEl = document.getElementById('sw-update-toast');
 const memoryModalEl = document.getElementById('memory-modal');
 const memorySearchInputEl = document.getElementById('memory-search-input');
 const memorySearchBtnEl = document.getElementById('memory-search-btn');
@@ -4438,6 +4475,29 @@ async function boot() {
   checkAnniversaryReminders();
 }
 boot();
+
+/* ---------- Service worker：离线可用 + 每次打开检查新版本 ---------- */
+if ('serviceWorker' in navigator) {
+  swUpdateToastEl.addEventListener('click', () => location.reload());
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          // controller 已存在说明不是首次安装，而是发现了新版本并已装好、
+          // 随时会接管页面——这时候才提示，首次安装不用打扰用户。
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            swUpdateToastEl.classList.add('show');
+          }
+        });
+      });
+      // 每次打开都主动问一次服务器上的 sw.js 是不是有新版本，
+      // 不用等浏览器自己按 24 小时周期去查。
+      reg.update().catch(() => {});
+    }).catch((err) => console.warn('Service worker 注册失败：', err));
+  });
+}
 </script>
 </body>
 </html>

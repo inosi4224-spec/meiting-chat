@@ -1,0 +1,19 @@
+{
+  "name": "Meiting Chat",
+  "short_name": "Meiting Chat",
+  "description": "Meiting Chat 聊天助手",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#141e1b",
+  "theme_color": "#141e1b",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
