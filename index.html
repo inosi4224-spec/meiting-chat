@@ -624,6 +624,19 @@
     background: var(--surface);
   }
   .modal-card textarea:focus { border-color: var(--accent); }
+  .settings-text-input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border-soft);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+    margin-bottom: 6px;
+  }
+  .settings-text-input:focus { border-color: var(--accent); }
   .color-row {
     display: flex;
     align-items: center;
@@ -1102,6 +1115,8 @@
       <select id="model-select">
         <option value="claude-opus-4-6">claude-opus-4-6</option>
         <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
+        <option value="deepseek-chat">DeepSeek Chat（备线）</option>
+        <option value="deepseek-reasoner">DeepSeek Reasoner（备线）</option>
       </select>
       <input type="password" id="api-key" placeholder="填入七牛云 API Key (sk-...)">
       <button class="secondary" id="theme-toggle-btn" title="切换深色模式">🌙</button>
@@ -1119,8 +1134,17 @@
       <div class="modal-card">
         <h2>设置</h2>
         <div class="settings-section">
-          <label class="settings-label">系统提示词 (System Prompt)</label>
+          <label class="settings-label">系统提示词 (System Prompt) — 全局默认，新建对话时使用</label>
           <textarea id="system-prompt-input"></textarea>
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">当前对话的系统提示词——只影响这一个对话，不影响全局默认</label>
+          <textarea id="conv-system-prompt-input"></textarea>
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">DeepSeek API Key（备线）</label>
+          <input type="password" class="settings-text-input" id="deepseek-api-key-input" placeholder="填入 DeepSeek API Key (sk-...)">
+          <span class="toggle-hint">模型选到 DeepSeek Chat / DeepSeek Reasoner 时会改用这个 Key，走 DeepSeek 官方接口（OpenAI 协议），不再用七牛云</span>
         </div>
         <div class="settings-section">
           <label class="settings-label">气泡颜色</label>
@@ -1355,7 +1379,12 @@
 <div id="drop-overlay" hidden><div id="drop-overlay-text">松开发送图片</div></div>
 
 <script>
-const API_ENDPOINT = "https://api.qnaigc.com/v1/messages";
+const CLAUDE_API_ENDPOINT = "https://api.qnaigc.com/v1/messages";
+const DEEPSEEK_API_ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
+const DEEPSEEK_MODELS = new Set(['deepseek-chat', 'deepseek-reasoner']);
+function getProvider(model) {
+  return DEEPSEEK_MODELS.has(model) ? 'deepseek' : 'claude';
+}
 const LATENT_ENDPOINT = "http://127.0.0.1:8765/mcp";
 const MAX_TOKENS = 8000;
 const THINKING_CONFIG_BY_MODEL = {
@@ -1454,6 +1483,8 @@ const themeToggleBtnEl = document.getElementById('theme-toggle-btn');
 const settingsBtnEl = document.getElementById('settings-btn');
 const settingsModalEl = document.getElementById('settings-modal');
 const systemPromptInputEl = document.getElementById('system-prompt-input');
+const convSystemPromptInputEl = document.getElementById('conv-system-prompt-input');
+const deepseekApiKeyInputEl = document.getElementById('deepseek-api-key-input');
 const settingsSaveEl = document.getElementById('settings-save');
 const settingsCancelEl = document.getElementById('settings-cancel');
 const aiColorInputEl = document.getElementById('ai-color-input');
@@ -1593,6 +1624,31 @@ async function idbDeleteDiary(id) {
   });
 }
 
+/* ---------- DeepSeek 备线：Key 和当前选中的模型都存 IndexedDB 的 meta 表
+   （复用已有的 idbGetMeta/idbSetMeta，不另开新 store）。模型选择原来存在
+   localStorage 里，这里做一次性迁移：读到旧值就搬进 IndexedDB 并清掉旧 key，
+   之后只认 IndexedDB。 */
+async function getDeepseekApiKey() {
+  return (await idbGetMeta('deepseekApiKey')) || '';
+}
+async function setDeepseekApiKey(key) {
+  await idbSetMeta('deepseekApiKey', key);
+}
+async function getSelectedModel() {
+  const stored = await idbGetMeta('selectedModel');
+  if (stored) return stored;
+  const legacy = localStorage.getItem('meiting-chat-model');
+  if (legacy) {
+    await idbSetMeta('selectedModel', legacy);
+    localStorage.removeItem('meiting-chat-model');
+    return legacy;
+  }
+  return DEFAULT_MODEL;
+}
+async function setSelectedModel(model) {
+  await idbSetMeta('selectedModel', model);
+}
+
 /* ---------- Conversation state ---------- */
 let conversations = [];
 let currentId = null;
@@ -1663,7 +1719,10 @@ function getCurrentConversation() {
 }
 
 async function createConversation() {
-  const conv = { id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '' };
+  const conv = {
+    id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '',
+    systemPrompt: getSystemPrompt()   // 继承当时的全局默认，之后这条对话自己独立修改
+  };
   conversations.unshift(conv);
   currentId = conv.id;
   await idbSetMeta('currentId', currentId);
@@ -2445,14 +2504,23 @@ apiKeyEl.addEventListener('input', () => {
   localStorage.setItem('meiting-chat-api-key', apiKeyEl.value);
 });
 
-modelSelectEl.value = localStorage.getItem('meiting-chat-model') || DEFAULT_MODEL;
-modelSelectEl.addEventListener('change', () => {
-  localStorage.setItem('meiting-chat-model', modelSelectEl.value);
+// 初始值在 boot() 里从 IndexedDB 读（异步），这里只挂修改时的持久化
+modelSelectEl.addEventListener('change', async () => {
+  await setSelectedModel(modelSelectEl.value);
 });
 
 function getSystemPrompt() {
   const stored = localStorage.getItem('meiting-chat-system-prompt');
   return stored !== null ? stored : DEFAULT_SYSTEM_PROMPT;
+}
+
+/* 实际发送请求时用的 system prompt：当前对话自己的那份优先（新建时从全局默认
+   继承过来、之后可以单独改），老对话（这个功能上线前建的）没有这个字段时才
+   退回全局默认。 */
+function getConvSystemPrompt() {
+  const conv = getCurrentConversation();
+  if (conv && conv.systemPrompt != null) return conv.systemPrompt;
+  return getSystemPrompt();
 }
 
 function getSplitEnabled() {
@@ -2635,8 +2703,11 @@ function refreshProfilePreview(role) {
   previewEl.src = draft.avatar || getDefaultAvatar(role, draft.nickname);
 }
 
-settingsBtnEl.addEventListener('click', () => {
+settingsBtnEl.addEventListener('click', async () => {
   systemPromptInputEl.value = getSystemPrompt();
+  const conv = getCurrentConversation();
+  convSystemPromptInputEl.value = conv && conv.systemPrompt != null ? conv.systemPrompt : getSystemPrompt();
+  deepseekApiKeyInputEl.value = await getDeepseekApiKey();
   aiColorInputEl.value = savedColors.ai;
   userColorInputEl.value = savedColors.user;
   applyColors(savedColors.ai, savedColors.user);
@@ -2706,8 +2777,14 @@ imageQualityInputEl.addEventListener('input', () => {
   imageQualityValueEl.textContent = Math.round(imageQualityInputEl.value * 100) + '%';
 });
 
-settingsSaveEl.addEventListener('click', () => {
+settingsSaveEl.addEventListener('click', async () => {
   localStorage.setItem('meiting-chat-system-prompt', systemPromptInputEl.value);
+  const conv = getCurrentConversation();
+  if (conv) {
+    conv.systemPrompt = convSystemPromptInputEl.value;
+    await saveConversations();
+  }
+  await setDeepseekApiKey(deepseekApiKeyInputEl.value.trim());
   savedColors.ai = aiColorInputEl.value;
   savedColors.user = userColorInputEl.value;
   localStorage.setItem('meiting-chat-color-ai', savedColors.ai);
@@ -3354,13 +3431,148 @@ async function buildApiMessages() {
 }
 
 /* ---------- Streaming send ---------- */
+/* HTTP 层面的错误（比如 401/400，服务器给了明确回应）用这个类型抛出，
+   跟网络层错误（连不上/被墙/DNS 失败之类，fetch 自己抛的）分开，好让最终
+   展示给用户的提示文案分别说"请求出错"还是"网络请求失败"——两种 provider
+   共用同一套外层 try/catch，靠这个类型区分，不用各自重复一份错误处理。 */
+class ApiHttpError extends Error {}
+
+async function readHttpErrorMessage(res) {
+  try {
+    const data = await res.json();
+    return (data && data.error && (data.error.message || data.error)) || JSON.stringify(data);
+  } catch (e) {
+    return `HTTP ${res.status}`;
+  }
+}
+
+async function sendToClaude(model, apiKey, assistantMsg) {
+  const apiMessages = await buildApiMessages();
+  await saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片
+
+  const res = await fetch(CLAUDE_API_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: MAX_TOKENS,
+      system: [getConvSystemPrompt(), getMemoryContext(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n'),
+      thinking: THINKING_CONFIG_BY_MODEL[model] || { type: 'adaptive' },
+      stream: true,
+      messages: apiMessages
+    })
+  });
+  if (!res.ok) throw new ApiHttpError(await readHttpErrorMessage(res));
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop();
+    for (const evt of events) {
+      if (!evt.trim()) continue;
+      let dataStr = '';
+      for (const line of evt.split('\n')) {
+        if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+      }
+      if (!dataStr) continue;
+      let data;
+      try { data = JSON.parse(dataStr); } catch (e) { continue; }
+      applyStreamEvent(data, assistantMsg);
+    }
+  }
+}
+
+/* DeepSeek 走 OpenAI 协议：system prompt 是消息数组里第一条 role:'system'，
+   不是 Anthropic 那种独立的顶层字段；图片消息只带文字部分——deepseek-chat/
+   deepseek-reasoner 都不支持图文输入，sendMessage() 里已经提前挡掉带图片
+   发送的情况，这里再兜底一次单纯不把图片塞进去，不会报错也不会丢文字。 */
+function buildDeepseekMessages() {
+  const sysPrompt = [getConvSystemPrompt(), getMemoryContext(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n');
+  const out = [];
+  if (sysPrompt) out.push({ role: 'system', content: sysPrompt });
+  for (const m of messages) {
+    if (m.streaming || !m.text) continue;
+    out.push({ role: m.role, content: m.text });
+  }
+  return out;
+}
+
+function applyDeepseekStreamEvent(data, msg) {
+  const delta = data.choices && data.choices[0] && data.choices[0].delta;
+  if (delta) {
+    if (delta.reasoning_content) msg.thinking = (msg.thinking || '') + delta.reasoning_content;
+    if (delta.content) msg.text = (msg.text || '') + delta.content;
+  }
+  if (data.usage) {
+    msg.usage = msg.usage || {};
+    if (data.usage.prompt_tokens != null) msg.usage.input_tokens = data.usage.prompt_tokens;
+    if (data.usage.completion_tokens != null) msg.usage.output_tokens = data.usage.completion_tokens;
+  }
+}
+
+async function sendToDeepseek(model, apiKey, assistantMsg) {
+  const res = await fetch(DEEPSEEK_API_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: buildDeepseekMessages(),
+      stream: true,
+      max_tokens: MAX_TOKENS
+    })
+  });
+  if (!res.ok) throw new ApiHttpError(await readHttpErrorMessage(res));
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop();
+    for (const evt of events) {
+      if (!evt.trim()) continue;
+      let dataStr = '';
+      for (const line of evt.split('\n')) {
+        if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+      }
+      if (!dataStr || dataStr === '[DONE]') continue;
+      let data;
+      try { data = JSON.parse(dataStr); } catch (e) { continue; }
+      applyDeepseekStreamEvent(data, assistantMsg);
+    }
+  }
+}
+
 async function sendMessage() {
   const text = textInputEl.value.trim();
   if (!text && pendingImages.length === 0) return;
 
-  const apiKey = apiKeyEl.value.trim();
+  const model = modelSelectEl.value;
+  const provider = getProvider(model);
+
+  if (provider === 'deepseek' && pendingImages.length > 0) {
+    alert('DeepSeek 模型不支持图片，请先移除待发送的图片，或切换回 Claude 模型。');
+    return;
+  }
+
+  const apiKey = provider === 'deepseek' ? await getDeepseekApiKey() : apiKeyEl.value.trim();
   if (!apiKey) {
-    alert('请先在顶部填入 API Key');
+    alert(provider === 'deepseek' ? '请先在设置里填入 DeepSeek API Key' : '请先在顶部填入 API Key');
     return;
   }
 
@@ -3374,9 +3586,6 @@ async function sendMessage() {
   pendingImages = [];
   renderPreview();
 
-  const apiMessages = await buildApiMessages();
-  await saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片
-
   const assistantMsg = { role: 'assistant', text: '', thinking: '', usage: null, streaming: true };
   messages.push(assistantMsg);
 
@@ -3386,63 +3595,11 @@ async function sendMessage() {
   scrollToBottom();
 
   try {
-    const res = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: modelSelectEl.value,
-        max_tokens: MAX_TOKENS,
-        system: [getSystemPrompt(), getMemoryContext(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n'),
-        thinking: THINKING_CONFIG_BY_MODEL[modelSelectEl.value] || { type: 'adaptive' },
-        stream: true,
-        messages: apiMessages
-      })
-    });
-
-    if (!res.ok) {
-      let errMsg;
-      try {
-        const data = await res.json();
-        errMsg = (data && data.error && data.error.message) || JSON.stringify(data);
-      } catch (e) {
-        errMsg = `HTTP ${res.status}`;
-      }
-      typingRow.remove();
-      messages.pop();
-      messages.push({ role: 'assistant', text: `⚠️ 请求出错：${errMsg}`, timestamp: Date.now() });
-      await saveMessages();
-      renderAll();
-      return;
+    if (provider === 'deepseek') {
+      await sendToDeepseek(model, apiKey, assistantMsg);
+    } else {
+      await sendToClaude(model, apiKey, assistantMsg);
     }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split('\n\n');
-      buffer = events.pop();
-
-      for (const evt of events) {
-        if (!evt.trim()) continue;
-        let dataStr = '';
-        for (const line of evt.split('\n')) {
-          if (line.startsWith('data:')) dataStr += line.slice(5).trim();
-        }
-        if (!dataStr) continue;
-        let data;
-        try { data = JSON.parse(dataStr); } catch (e) { continue; }
-        applyStreamEvent(data, assistantMsg);
-      }
-    }
-
     assistantMsg.streaming = false;
     assistantMsg.timestamp = Date.now();
     typingRow.remove();
@@ -3452,7 +3609,8 @@ async function sendMessage() {
   } catch (err) {
     typingRow.remove();
     messages.pop();
-    messages.push({ role: 'assistant', text: `⚠️ 网络请求失败：${err.message}`, timestamp: Date.now() });
+    const label = err instanceof ApiHttpError ? '请求出错' : '网络请求失败';
+    messages.push({ role: 'assistant', text: `⚠️ ${label}：${err.message}`, timestamp: Date.now() });
     await saveMessages();
     renderAll();
   } finally {
@@ -3492,6 +3650,7 @@ function applyStreamEvent(data, msg) {
 
 /* ---------- Boot ---------- */
 async function boot() {
+  modelSelectEl.value = await getSelectedModel();
   conversations = await loadConversations();
   diaries = await loadDiaries();
   currentId = await idbGetMeta('currentId');
