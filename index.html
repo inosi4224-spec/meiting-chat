@@ -914,6 +914,21 @@
   }
   .file-thumb-action:hover { background: rgba(0,0,0,0.78); }
   .file-thumb-action-danger:hover { background: #c0574f; }
+  .files-select-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px; font-size: 12.5px; color: var(--text);
+  }
+  .files-select-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .files-select-row input[type="checkbox"] { accent-color: var(--accent); }
+  .files-select-row button {
+    padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border-soft);
+    background: transparent; color: var(--text-soft); font-size: 12px; cursor: pointer;
+  }
+  .files-select-row button:hover { background: var(--surface-hover); color: var(--accent); }
+  .file-thumb-select {
+    position: absolute; top: 4px; left: 4px; z-index: 2;
+    width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer;
+  }
   .file-preview-card { position: relative; max-width: 90vw; max-height: 90vh; }
   .file-preview-card img { max-width: 90vw; max-height: 90vh; border-radius: 10px; display: block; }
   #file-preview-close {
@@ -1265,7 +1280,7 @@
           </label>
         </div>
         <div class="settings-section">
-          <label class="settings-label">个人资料——双方头像和网名，新对话会继承这份默认</label>
+          <label class="settings-label">我的头像 / 网名——新对话会继承这份默认</label>
           <div class="profile-edit-row">
             <div class="profile-edit-field">
               <img class="profile-avatar-preview" id="user-avatar-preview" title="点击上传头像">
@@ -1275,15 +1290,8 @@
                 <input type="text" id="user-nickname-input" maxlength="20">
               </div>
             </div>
-            <div class="profile-edit-field">
-              <img class="profile-avatar-preview" id="ai-avatar-preview" title="点击上传头像">
-              <input type="file" id="ai-avatar-input" accept="image/*" style="display:none">
-              <div class="profile-edit-info">
-                <span>AI 头像 / 网名</span>
-                <input type="text" id="ai-nickname-input" maxlength="20">
-              </div>
-            </div>
           </div>
+          <span class="toggle-hint">AI 的头像/网名不再有全局默认——每条对话用的模型/角色可能不一样，点聊天里的 AI 头像单独给这条对话设置，避免不同模型都顶着同一个名字</span>
         </div>
         <div class="settings-section">
           <label class="settings-label">发送</label>
@@ -1477,6 +1485,11 @@
           <span>至</span>
           <input type="date" id="files-filter-end">
         </div>
+        <div class="files-select-row">
+          <label><input type="checkbox" id="files-select-all-input"> 全选</label>
+          <button type="button" class="secondary" id="files-batch-download-btn">批量下载</button>
+          <button type="button" class="secondary" id="files-batch-delete-btn">批量删除</button>
+        </div>
         <div class="files-grid" id="files-grid"></div>
         <div class="modal-actions">
           <button class="secondary" id="files-close">关闭</button>
@@ -1614,6 +1627,9 @@ const filesFilterTypeEl = document.getElementById('files-filter-type');
 const filesFilterStartEl = document.getElementById('files-filter-start');
 const filesFilterEndEl = document.getElementById('files-filter-end');
 const filesGridEl = document.getElementById('files-grid');
+const filesSelectAllInputEl = document.getElementById('files-select-all-input');
+const filesBatchDownloadBtnEl = document.getElementById('files-batch-download-btn');
+const filesBatchDeleteBtnEl = document.getElementById('files-batch-delete-btn');
 const filesCloseEl = document.getElementById('files-close');
 const filePreviewModalEl = document.getElementById('file-preview-modal');
 const filePreviewImgEl = document.getElementById('file-preview-img');
@@ -1684,9 +1700,6 @@ const imageQualityValueEl = document.getElementById('image-quality-value');
 const userAvatarPreviewEl = document.getElementById('user-avatar-preview');
 const userAvatarInputEl = document.getElementById('user-avatar-input');
 const userNicknameInputEl = document.getElementById('user-nickname-input');
-const aiAvatarPreviewEl = document.getElementById('ai-avatar-preview');
-const aiAvatarInputEl = document.getElementById('ai-avatar-input');
-const aiNicknameInputEl = document.getElementById('ai-nickname-input');
 const profileModalEl = document.getElementById('profile-modal');
 const profileBgEl = document.getElementById('profile-bg');
 const profileBgBtnEl = document.getElementById('profile-bg-btn');
@@ -2000,7 +2013,10 @@ async function createConversation(presetId) {
     systemPrompt: getSystemPrompt(),   // 继承当时的全局默认，之后这条对话自己独立修改
     historySummary: '', summarizedUpTo: 0,   // 上下文裁剪用：还没摘要过任何历史
     presetId: presetId || (presets[0] && presets[0].id) || null,   // 没传就退回第一个预设，兜底
-    profiles: { user: getProfile('user'), ai: getProfile('ai') },   // 继承全局默认头像/网名，之后独立修改
+    // 我的头像/网名继承全局默认；AI 那份不再有全局模板，从中性的硬编码默认值
+    // 开始——不同对话可能配的是不同模型/角色，不该都顶着同一个继承来的名字，
+    // 点聊天里的 AI 头像可以单独给这条对话设置。
+    profiles: { user: getProfile('user'), ai: Object.assign({}, DEFAULT_PROFILES.ai) },
     contextTrim: {   // 继承当时的全局默认（如果之前配过），之后这条对话自己独立修改
       enabled: await getGlobalDefaultContextTrimEnabled(),
       keepCount: await getGlobalDefaultContextTrimKeepCount()
@@ -2516,9 +2532,18 @@ function renderFilesGrid() {
     filesGridEl.innerHTML = '<div class="files-grid-empty">没有符合条件的文件</div>';
     return;
   }
+  filesSelectAllInputEl.checked = false;
   for (const f of filtered) {
     const thumb = document.createElement('div');
     thumb.className = 'file-thumb';
+
+    const selectCb = document.createElement('input');
+    selectCb.type = 'checkbox';
+    selectCb.className = 'file-thumb-select';
+    selectCb.dataset.msgIndex = f.msgIndex;
+    selectCb.dataset.imgIndex = f.imgIndex;
+    selectCb.addEventListener('click', (e) => e.stopPropagation());
+    thumb.appendChild(selectCb);
 
     const imgEl = document.createElement('img');
     imgEl.src = `data:${f.media_type};base64,${f.data}`;
@@ -2620,6 +2645,53 @@ async function deleteFileItem(f) {
   renderAll();
   renderFilesGrid();
 }
+
+/* ---------- 多选：批量下载 / 批量删除 ---------- */
+function getSelectedFileKeys() {
+  return Array.from(filesGridEl.querySelectorAll('.file-thumb-select:checked')).map(cb => ({
+    msgIndex: parseInt(cb.dataset.msgIndex, 10),
+    imgIndex: parseInt(cb.dataset.imgIndex, 10)
+  }));
+}
+
+filesSelectAllInputEl.addEventListener('change', () => {
+  const checked = filesSelectAllInputEl.checked;
+  filesGridEl.querySelectorAll('.file-thumb-select').forEach(cb => { cb.checked = checked; });
+});
+
+filesBatchDownloadBtnEl.addEventListener('click', async () => {
+  const keys = getSelectedFileKeys();
+  if (!keys.length) {
+    alert('请先勾选要下载的文件');
+    return;
+  }
+  const files = collectConversationFiles();
+  for (const key of keys) {
+    const f = files.find(x => x.msgIndex === key.msgIndex && x.imgIndex === key.imgIndex);
+    if (!f) continue;
+    downloadFileItem(f);
+    await sleep(200);   // 挨个触发之间留点间隔，降低被浏览器当成"批量弹窗"拦截的概率
+  }
+});
+
+filesBatchDeleteBtnEl.addEventListener('click', async () => {
+  const keys = getSelectedFileKeys();
+  if (!keys.length) {
+    alert('请先勾选要删除的文件');
+    return;
+  }
+  if (!confirm(`确定要删除选中的 ${keys.length} 个文件吗？此操作无法撤销。`)) return;
+  // 同一条消息里可能选中了好几张图；按 imgIndex 从大到小删，避免先删小下标
+  // 导致后面还没删的大下标跟着往前挪、对不上号。
+  keys.sort((a, b) => b.msgIndex - a.msgIndex || b.imgIndex - a.imgIndex);
+  for (const key of keys) {
+    const m = messages[key.msgIndex];
+    if (m && m.images) m.images.splice(key.imgIndex, 1);
+  }
+  await saveMessages();
+  renderAll();
+  renderFilesGrid();
+});
 
 filesBtnEl.addEventListener('click', () => {
   filesFilterKeywordEl.value = '';
@@ -3237,13 +3309,14 @@ function populateConvPresetSelect() {
   convPresetSelectEl.value = (conv && conv.presetId) || presets[0].id;
 }
 
-/* ---------- Settings modal ---------- */
-let profileDraft = { user: null, ai: null };
+/* ---------- Settings modal ----------
+   全局默认头像/网名现在只剩"我的"这一份——AI 那份不再有全局模板，每条对话
+   自己在聊天里点头像单独设，避免不同预设/模型的对话都顶着同一个继承来的
+   AI 名字（不同模型混在一起时尤其容易搞混）。 */
+let profileDraft = { user: null };
 
-function refreshProfilePreview(role) {
-  const draft = profileDraft[role];
-  const previewEl = role === 'user' ? userAvatarPreviewEl : aiAvatarPreviewEl;
-  previewEl.src = draft.avatar || getDefaultAvatar(role, draft.nickname);
+function refreshProfilePreview() {
+  userAvatarPreviewEl.src = profileDraft.user.avatar || getDefaultAvatar('user', profileDraft.user.nickname);
 }
 
 /* ================= 对话设置：只影响当前打开的这一条对话 ================= */
@@ -3301,44 +3374,27 @@ async function openGlobalSettingsModal() {
   imageQualityValueEl.textContent = Math.round(imageQualityInputEl.value * 100) + '%';
 
   profileDraft.user = getProfile('user');
-  profileDraft.ai = getProfile('ai');
   userNicknameInputEl.value = profileDraft.user.nickname;
-  aiNicknameInputEl.value = profileDraft.ai.nickname;
-  refreshProfilePreview('user');
-  refreshProfilePreview('ai');
+  refreshProfilePreview();
 
   globalSettingsModalEl.hidden = false;
   systemPromptInputEl.focus();
 }
 
 userAvatarPreviewEl.addEventListener('click', () => userAvatarInputEl.click());
-aiAvatarPreviewEl.addEventListener('click', () => aiAvatarInputEl.click());
 
 userAvatarInputEl.addEventListener('change', async () => {
   const file = userAvatarInputEl.files && userAvatarInputEl.files[0];
   if (!file) return;
   const raw = await fileToDataUrl(file);
   profileDraft.user.avatar = await resizeImageDataUrl(raw, 200);
-  refreshProfilePreview('user');
+  refreshProfilePreview();
   userAvatarInputEl.value = '';
-});
-
-aiAvatarInputEl.addEventListener('change', async () => {
-  const file = aiAvatarInputEl.files && aiAvatarInputEl.files[0];
-  if (!file) return;
-  const raw = await fileToDataUrl(file);
-  profileDraft.ai.avatar = await resizeImageDataUrl(raw, 200);
-  refreshProfilePreview('ai');
-  aiAvatarInputEl.value = '';
 });
 
 userNicknameInputEl.addEventListener('input', () => {
   profileDraft.user.nickname = userNicknameInputEl.value;
-  if (!profileDraft.user.avatar) refreshProfilePreview('user');
-});
-aiNicknameInputEl.addEventListener('input', () => {
-  profileDraft.ai.nickname = aiNicknameInputEl.value;
-  if (!profileDraft.ai.avatar) refreshProfilePreview('ai');
+  if (!profileDraft.user.avatar) refreshProfilePreview();
 });
 
 function closeGlobalSettingsWithoutSaving() {
@@ -3377,9 +3433,7 @@ globalSettingsSaveEl.addEventListener('click', () => {
   localStorage.setItem('meiting-chat-image-quality', imageQualityInputEl.value);
 
   profileDraft.user.nickname = userNicknameInputEl.value.trim() || DEFAULT_PROFILES.user.nickname;
-  profileDraft.ai.nickname = aiNicknameInputEl.value.trim() || DEFAULT_PROFILES.ai.nickname;
   saveProfile('user', profileDraft.user);
-  saveProfile('ai', profileDraft.ai);
 
   globalSettingsModalEl.hidden = true;
   renderAll();
