@@ -265,7 +265,7 @@
     display: flex;
     width: 100%;
     gap: 8px;
-    align-items: flex-end;
+    align-items: flex-start;
   }
   .msg-row.ai { justify-content: flex-start; }
   .msg-row.user { justify-content: flex-end; }
@@ -2025,13 +2025,25 @@ async function revealAssistantMessage(m) {
 }
 
 /* ---------- Image attach ---------- */
+/* 不管原始文件是什么格式，一律经 canvas 重新画一遍导出成 PNG，media_type 固定
+   写 image/png——避免用户发的图片原始格式（webp/bmp 等）不在 API 支持列表里
+   导致报错。*/
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const result = reader.result;
-      const base64 = result.substring(result.indexOf(',') + 1);
-      resolve({ media_type: file.type || 'image/png', data: base64 });
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
+        resolve({ media_type: 'image/png', data: base64 });
+      };
+      img.onerror = reject;
+      img.src = reader.result;
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
