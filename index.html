@@ -328,6 +328,11 @@
     border: 1px solid var(--bubble-border);
     color: var(--text);
   }
+  .msg-highlight .bubble { animation: msg-highlight-flash 1.5s ease; }
+  @keyframes msg-highlight-flash {
+    0% { box-shadow: 0 0 0 3px var(--accent); }
+    100% { box-shadow: 0 2px 6px rgba(60, 90, 80, 0.08); }
+  }
   .msg-row.ai .bubble {
     background: var(--bubble-ai-bg);
     border-top-left-radius: 4px;
@@ -742,6 +747,72 @@
     50% { box-shadow: 0 0 0 6px rgba(232, 90, 90, 0); }
   }
 
+  /* ---------- Drag & drop / paste image overlay ---------- */
+  #drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: rgba(63, 163, 146, 0.16);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  #drop-overlay[hidden] { display: none; }
+  #drop-overlay-text {
+    padding: 20px 36px;
+    border-radius: 18px;
+    border: 3px dashed var(--accent);
+    background: var(--surface);
+    color: var(--accent-hover);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  /* ---------- Files browser (per conversation) ---------- */
+  .files-filter-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .files-filter-row input[type="text"] {
+    flex: 1; padding: 8px 12px; border-radius: 10px;
+    border: 1px solid var(--border-soft); background: var(--surface);
+    color: var(--text); font-size: 13px; outline: none;
+  }
+  .files-filter-row select, .files-filter-row input[type="date"] {
+    padding: 7px 8px; border-radius: 10px; border: 1px solid var(--border-soft);
+    background: var(--surface); color: var(--text); font-size: 12.5px; outline: none;
+  }
+  .files-filter-row span { font-size: 12px; color: var(--text-soft); }
+  .files-grid {
+    max-height: 360px; overflow-y: auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px; padding: 2px;
+  }
+  .files-grid-empty { grid-column: 1 / -1; text-align: center; color: var(--text-soft); font-size: 12.5px; padding: 24px 0; }
+  .file-thumb {
+    position: relative; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border-soft); cursor: pointer;
+    aspect-ratio: 1 / 1; background: var(--surface);
+  }
+  .file-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .file-thumb-date {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.55); color: #fff;
+    font-size: 9.5px; padding: 2px 4px; text-align: center;
+  }
+  .file-thumb-jump {
+    position: absolute; top: 3px; right: 3px;
+    background: rgba(0,0,0,0.5); color: #fff; border: none;
+    border-radius: 6px; font-size: 10px; padding: 2px 6px; cursor: pointer;
+  }
+  .file-preview-card { position: relative; max-width: 90vw; max-height: 90vh; }
+  .file-preview-card img { max-width: 90vw; max-height: 90vh; border-radius: 10px; display: block; }
+  #file-preview-close {
+    position: absolute; top: -14px; right: -14px;
+    width: 30px; height: 30px; border-radius: 50%; border: none;
+    background: #fff; color: #333; font-size: 15px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
   /* ---------- Profile editing (in settings) ---------- */
   .profile-edit-row {
     display: flex;
@@ -1010,6 +1081,7 @@
       </select>
       <input type="password" id="api-key" placeholder="填入七牛云 API Key (sk-...)">
       <button class="secondary" id="theme-toggle-btn" title="切换深色模式">🌙</button>
+      <button class="secondary" id="files-btn">文件</button>
       <button class="secondary" id="settings-btn">设置</button>
       <button class="secondary" id="clear-btn">清空当前对话</button>
     </header>
@@ -1143,6 +1215,36 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="files-modal" hidden>
+      <div class="modal-card">
+        <h2>本对话的图片与文件</h2>
+        <div class="files-filter-row">
+          <input type="text" id="files-filter-keyword" placeholder="按文件名搜索…">
+          <select id="files-filter-type">
+            <option value="all">全部类型</option>
+            <option value="image">图片</option>
+            <option value="document">文档</option>
+          </select>
+        </div>
+        <div class="files-filter-row">
+          <input type="date" id="files-filter-start">
+          <span>至</span>
+          <input type="date" id="files-filter-end">
+        </div>
+        <div class="files-grid" id="files-grid"></div>
+        <div class="modal-actions">
+          <button class="secondary" id="files-close">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="file-preview-modal" hidden>
+      <div class="file-preview-card">
+        <img id="file-preview-img">
+        <button type="button" id="file-preview-close">✕</button>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="memory-modal" hidden>
       <div class="modal-card">
         <h2>记忆库</h2>
@@ -1191,6 +1293,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="drop-overlay" hidden><div id="drop-overlay-text">松开发送图片</div></div>
 
 <script>
 const API_ENDPOINT = "https://api.qnaigc.com/v1/messages";
@@ -1245,6 +1348,18 @@ const anniversaryModalEl = document.getElementById('anniversary-modal');
 const anniversaryTitleEl = document.getElementById('anniversary-title');
 const anniversaryBodyEl = document.getElementById('anniversary-body');
 const anniversaryCloseEl = document.getElementById('anniversary-close');
+const filesBtnEl = document.getElementById('files-btn');
+const filesModalEl = document.getElementById('files-modal');
+const filesFilterKeywordEl = document.getElementById('files-filter-keyword');
+const filesFilterTypeEl = document.getElementById('files-filter-type');
+const filesFilterStartEl = document.getElementById('files-filter-start');
+const filesFilterEndEl = document.getElementById('files-filter-end');
+const filesGridEl = document.getElementById('files-grid');
+const filesCloseEl = document.getElementById('files-close');
+const filePreviewModalEl = document.getElementById('file-preview-modal');
+const filePreviewImgEl = document.getElementById('file-preview-img');
+const filePreviewCloseEl = document.getElementById('file-preview-close');
+const dropOverlayEl = document.getElementById('drop-overlay');
 const navMenuEl = document.getElementById('nav-menu');
 const toastEl = document.getElementById('toast');
 const memoryModalEl = document.getElementById('memory-modal');
@@ -1830,6 +1945,120 @@ function checkAnniversaryReminders() {
   }
 }
 anniversaryCloseEl.addEventListener('click', () => { anniversaryModalEl.hidden = true; });
+
+/* ---------- Files browser (per conversation) ----------
+   目前应用里能发的附件只有图片（还没有通用文档上传功能），所以"文档"这个筛选
+   项现在永远是空列表——不是漏做，是如实反映当前数据里没有非图片附件；以后真
+   加了文档发送功能，这里不用改就能接上，因为筛选逻辑是按 media_type 分类的，
+   不是写死只认图片。 */
+function collectConversationFiles() {
+  const out = [];
+  messages.forEach((m, msgIndex) => {
+    if (!m.images) return;
+    m.images.forEach((img, imgIndex) => {
+      out.push({
+        msgIndex,
+        imgIndex,
+        name: img.name || `图片_${msgIndex}_${imgIndex}`,
+        media_type: img.media_type,
+        data: img.data,
+        timestamp: m.timestamp || 0
+      });
+    });
+  });
+  out.sort((a, b) => a.timestamp - b.timestamp);
+  return out;
+}
+
+function fileTypeCategory(mediaType) {
+  return mediaType && mediaType.startsWith('image/') ? 'image' : 'document';
+}
+
+function renderFilesGrid() {
+  const keyword = filesFilterKeywordEl.value.trim().toLowerCase();
+  const type = filesFilterTypeEl.value;
+  const startVal = filesFilterStartEl.value;
+  const endVal = filesFilterEndEl.value;
+  const startTs = startVal ? new Date(startVal + 'T00:00:00').getTime() : null;
+  const endTs = endVal ? new Date(endVal + 'T23:59:59').getTime() : null;
+
+  const filtered = collectConversationFiles().filter(f => {
+    if (keyword && !f.name.toLowerCase().includes(keyword)) return false;
+    if (type !== 'all' && fileTypeCategory(f.media_type) !== type) return false;
+    if (startTs != null && f.timestamp < startTs) return false;
+    if (endTs != null && f.timestamp > endTs) return false;
+    return true;
+  });
+
+  filesGridEl.innerHTML = '';
+  if (!filtered.length) {
+    filesGridEl.innerHTML = '<div class="files-grid-empty">没有符合条件的文件</div>';
+    return;
+  }
+  for (const f of filtered) {
+    const thumb = document.createElement('div');
+    thumb.className = 'file-thumb';
+
+    const imgEl = document.createElement('img');
+    imgEl.src = `data:${f.media_type};base64,${f.data}`;
+    imgEl.title = f.name;
+    thumb.appendChild(imgEl);
+
+    const dateEl = document.createElement('div');
+    dateEl.className = 'file-thumb-date';
+    dateEl.textContent = formatTimestamp(f.timestamp);
+    thumb.appendChild(dateEl);
+
+    const jumpBtn = document.createElement('button');
+    jumpBtn.type = 'button';
+    jumpBtn.className = 'file-thumb-jump';
+    jumpBtn.textContent = '跳转';
+    jumpBtn.title = '跳转到原消息';
+    jumpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      jumpToMessage(f.msgIndex);
+    });
+    thumb.appendChild(jumpBtn);
+
+    thumb.addEventListener('click', () => openFilePreview(f));
+    filesGridEl.appendChild(thumb);
+  }
+}
+
+function openFilePreview(f) {
+  filePreviewImgEl.src = `data:${f.media_type};base64,${f.data}`;
+  filePreviewModalEl.hidden = false;
+}
+filePreviewCloseEl.addEventListener('click', () => { filePreviewModalEl.hidden = true; });
+filePreviewModalEl.addEventListener('click', (e) => {
+  if (e.target === filePreviewModalEl) filePreviewModalEl.hidden = true;
+});
+
+function jumpToMessage(msgIndex) {
+  filesModalEl.hidden = true;
+  const row = chatEl.querySelector(`[data-msg-index="${msgIndex}"]`);
+  if (!row) return;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('msg-highlight');
+  setTimeout(() => row.classList.remove('msg-highlight'), 1500);
+}
+
+filesBtnEl.addEventListener('click', () => {
+  filesFilterKeywordEl.value = '';
+  filesFilterTypeEl.value = 'all';
+  filesFilterStartEl.value = '';
+  filesFilterEndEl.value = '';
+  renderFilesGrid();
+  filesModalEl.hidden = false;
+});
+filesCloseEl.addEventListener('click', () => { filesModalEl.hidden = true; });
+filesModalEl.addEventListener('click', (e) => {
+  if (e.target === filesModalEl) filesModalEl.hidden = true;
+});
+[filesFilterKeywordEl, filesFilterTypeEl, filesFilterStartEl, filesFilterEndEl].forEach(el => {
+  el.addEventListener('input', renderFilesGrid);
+  el.addEventListener('change', renderFilesGrid);
+});
 
 /* ---------- Toast ---------- */
 let toastTimer = null;
@@ -2424,6 +2653,7 @@ function renderSingleRow(m, textContent, opts) {
 
   const row = document.createElement('div');
   row.className = 'msg-row ' + role;
+  if (opts.msgIndex != null) row.dataset.msgIndex = opts.msgIndex;
 
   const avatarEl = document.createElement('img');
   avatarEl.className = 'msg-avatar';
@@ -2520,26 +2750,27 @@ function getAssistantSegments(text) {
   return { segments: trimmed ? [trimmed] : [], split: false };
 }
 
-function renderMessageRows(m) {
+function renderMessageRows(m, msgIndex) {
   if (m.role === 'user') {
-    return [renderSingleRow(m, m.text, { images: m.images, timestamp: m.timestamp })];
+    return [renderSingleRow(m, m.text, { images: m.images, timestamp: m.timestamp, msgIndex })];
   }
   const { segments } = getAssistantSegments(m.text);
   if (!segments.length) {
-    return [renderSingleRow(m, m.text || '', { thinking: m.thinking, usage: m.usage, timestamp: m.timestamp })];
+    return [renderSingleRow(m, m.text || '', { thinking: m.thinking, usage: m.usage, timestamp: m.timestamp, msgIndex })];
   }
   return segments.map((seg, i) => renderSingleRow(m, seg, {
     thinking: i === 0 ? m.thinking : null,
     usage: i === segments.length - 1 ? m.usage : null,
-    timestamp: i === segments.length - 1 ? m.timestamp : null
+    timestamp: i === segments.length - 1 ? m.timestamp : null,
+    msgIndex
   }));
 }
 
 function renderAll() {
   chatEl.innerHTML = '';
-  for (const m of messages) {
-    for (const row of renderMessageRows(m)) chatEl.appendChild(row);
-  }
+  messages.forEach((m, msgIndex) => {
+    for (const row of renderMessageRows(m, msgIndex)) chatEl.appendChild(row);
+  });
   renderTotalsBar();
   scrollToBottom();
 }
@@ -2663,7 +2894,7 @@ function fileToBase64(file) {
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', getImageQuality());
         const base64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
-        resolve({ media_type: 'image/jpeg', data: base64 });
+        resolve({ media_type: 'image/jpeg', data: base64, name: file.name || '粘贴的图片.png' });
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -2724,14 +2955,61 @@ micBtnEl.addEventListener('click', () => {
 
 imgBtnEl.addEventListener('click', () => imgInputEl.click());
 
-imgInputEl.addEventListener('change', async () => {
-  const files = Array.from(imgInputEl.files || []);
-  for (const file of files) {
+/* 图片按钮选图、Ctrl+V 粘贴、拖拽进来的图片都走这一个函数，统一压缩流程。 */
+async function addImageFiles(files) {
+  const imageFiles = files.filter(f => f.type && f.type.startsWith('image/'));
+  for (const file of imageFiles) {
     const b64 = await fileToBase64(file);
     pendingImages.push(b64);
   }
+  if (imageFiles.length) renderPreview();
+  return imageFiles.length;
+}
+
+imgInputEl.addEventListener('change', async () => {
+  await addImageFiles(Array.from(imgInputEl.files || []));
   imgInputEl.value = '';
-  renderPreview();
+});
+
+/* ---------- Paste image from clipboard ---------- */
+textInputEl.addEventListener('paste', async (e) => {
+  const items = Array.from(e.clipboardData && e.clipboardData.items || []);
+  const imageFiles = items
+    .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+    .map(it => it.getAsFile())
+    .filter(Boolean);
+  if (!imageFiles.length) return;   // 普通文字粘贴，交给默认行为
+  e.preventDefault();
+  await addImageFiles(imageFiles);
+});
+
+/* ---------- Drag & drop image onto the page ---------- */
+let dragCounter = 0;
+function dragHasFiles(e) {
+  return Array.from(e.dataTransfer.types || []).includes('Files');
+}
+document.addEventListener('dragenter', (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();
+  dragCounter++;
+  dropOverlayEl.hidden = false;
+});
+document.addEventListener('dragover', (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();
+});
+document.addEventListener('dragleave', () => {
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) dropOverlayEl.hidden = true;
+});
+document.addEventListener('drop', async (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();
+  dragCounter = 0;
+  dropOverlayEl.hidden = true;
+  const files = Array.from(e.dataTransfer.files || []);
+  const added = await addImageFiles(files);
+  if (!added && files.length) showToast('拖入的文件里没有图片');
 });
 
 function renderPreview() {
