@@ -144,8 +144,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 8px 10px;
     border-radius: 10px;
     cursor: pointer;
     font-size: 13px;
@@ -158,9 +158,30 @@
     border: 1px solid var(--border-soft);
     font-weight: 600;
   }
-  .conv-title {
+  .conv-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: 1px solid var(--border-soft);
+    background: var(--surface);
+  }
+  .conv-info {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .conv-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .conv-persona {
+    font-size: 11px;
+    color: var(--text-soft);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1936,7 +1957,8 @@ async function createConversation(presetId) {
     id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '',
     systemPrompt: getSystemPrompt(),   // 继承当时的全局默认，之后这条对话自己独立修改
     historySummary: '', summarizedUpTo: 0,   // 上下文裁剪用：还没摘要过任何历史
-    presetId: presetId || (presets[0] && presets[0].id) || null   // 没传就退回第一个预设，兜底
+    presetId: presetId || (presets[0] && presets[0].id) || null,   // 没传就退回第一个预设，兜底
+    profiles: { user: getProfile('user'), ai: getProfile('ai') }   // 继承全局默认头像/网名，之后独立修改
   };
   conversations.unshift(conv);
   currentId = conv.id;
@@ -2008,15 +2030,38 @@ function renderSidebar() {
   for (const conv of sorted) {
     const item = document.createElement('div');
     item.className = 'conv-item' + (conv.id === currentId ? ' active' : '');
+
+    const aiProfile = getProfileForConv(conv, 'ai');
+    const avatarEl = document.createElement('img');
+    avatarEl.className = 'conv-avatar';
+    avatarEl.src = aiProfile.avatar || getDefaultAvatar('ai', aiProfile.nickname);
+    avatarEl.alt = aiProfile.nickname;
+    avatarEl.title = `编辑 ${aiProfile.nickname} 的头像/网名`;
+    avatarEl.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await switchConversation(conv.id);
+      openProfileCard('ai');
+    });
+
+    const info = document.createElement('div');
+    info.className = 'conv-info';
     const titleEl = document.createElement('span');
     titleEl.className = 'conv-title';
     titleEl.textContent = conv.title || '新对话';
+    const personaEl = document.createElement('span');
+    personaEl.className = 'conv-persona';
+    personaEl.textContent = aiProfile.nickname;
+    info.appendChild(titleEl);
+    info.appendChild(personaEl);
+
     const delBtn = document.createElement('button');
     delBtn.className = 'conv-delete';
     delBtn.textContent = '×';
     delBtn.title = '删除对话';
     delBtn.addEventListener('click', (e) => deleteConversation(conv.id, e));
-    item.appendChild(titleEl);
+
+    item.appendChild(avatarEl);
+    item.appendChild(info);
     item.appendChild(delBtn);
     item.addEventListener('click', () => switchConversation(conv.id));
     convListEl.appendChild(item);
@@ -2868,6 +2913,28 @@ function saveProfile(role, profile) {
   }
 }
 
+/* 每条对话自己的头像/网名/签名/背景——上面 getProfile/saveProfile 是"全局默认
+   模板"，只在新建对话那一刻被"抄"一份进 conv.profiles（深拷贝，不是引用，
+   之后两边互不影响）。存在 conv.profiles 里，跟着 conversations 这个
+   IndexedDB store 走，不用另开字段之外的结构。老对话（这个功能上线前建的）
+   没有 profiles 字段时退回全局默认，跟 systemPrompt 那套迁移策略一致。 */
+function getProfileForConv(conv, role) {
+  if (conv && conv.profiles && conv.profiles[role]) {
+    return Object.assign({}, DEFAULT_PROFILES[role], conv.profiles[role]);
+  }
+  return getProfile(role);
+}
+function getConvProfile(role) {
+  return getProfileForConv(getCurrentConversation(), role);
+}
+async function saveConvProfile(role, profile) {
+  const conv = getCurrentConversation();
+  if (!conv) return;
+  if (!conv.profiles) conv.profiles = {};
+  conv.profiles[role] = profile;
+  await saveConversations();
+}
+
 function escapeXml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -3234,7 +3301,7 @@ let profileCardRole = null;
 
 function openProfileCard(role) {
   profileCardRole = role;
-  const profile = getProfile(role);
+  const profile = getConvProfile(role);
   profileCardAvatarEl.src = profile.avatar || getDefaultAvatar(role, profile.nickname);
   profileCardNameEl.value = profile.nickname;
   profileCardBioEl.value = profile.bio || '';
@@ -3252,28 +3319,30 @@ profileModalEl.addEventListener('click', (e) => {
   if (e.target === profileModalEl) closeProfileCard();
 });
 
-profileCardBioEl.addEventListener('input', () => {
+profileCardBioEl.addEventListener('input', async () => {
   if (!profileCardRole) return;
-  const profile = getProfile(profileCardRole);
+  const profile = getConvProfile(profileCardRole);
   profile.bio = profileCardBioEl.value;
-  saveProfile(profileCardRole, profile);
+  await saveConvProfile(profileCardRole, profile);
 });
 
-profileCardNameEl.addEventListener('input', () => {
+profileCardNameEl.addEventListener('input', async () => {
   if (!profileCardRole) return;
-  const profile = getProfile(profileCardRole);
+  const profile = getConvProfile(profileCardRole);
   profile.nickname = profileCardNameEl.value;
-  saveProfile(profileCardRole, profile);
+  await saveConvProfile(profileCardRole, profile);
   renderAll();
+  renderSidebar();
 });
-profileCardNameEl.addEventListener('blur', () => {
+profileCardNameEl.addEventListener('blur', async () => {
   if (!profileCardRole) return;
-  const profile = getProfile(profileCardRole);
+  const profile = getConvProfile(profileCardRole);
   if (!profile.nickname || !profile.nickname.trim()) {
     profile.nickname = DEFAULT_PROFILES[profileCardRole].nickname;
     profileCardNameEl.value = profile.nickname;
-    saveProfile(profileCardRole, profile);
+    await saveConvProfile(profileCardRole, profile);
     renderAll();
+    renderSidebar();
   }
 });
 
@@ -3283,12 +3352,13 @@ profileCardAvatarInputEl.addEventListener('change', async () => {
   if (!file || !profileCardRole) return;
   const raw = await fileToDataUrl(file);
   const dataUrl = await resizeImageDataUrl(raw, 200);
-  const profile = getProfile(profileCardRole);
+  const profile = getConvProfile(profileCardRole);
   profile.avatar = dataUrl;
-  saveProfile(profileCardRole, profile);
+  await saveConvProfile(profileCardRole, profile);
   profileCardAvatarEl.src = dataUrl;
   profileCardAvatarInputEl.value = '';
   renderAll();
+  renderSidebar();
 });
 
 profileBgBtnEl.addEventListener('click', () => profileBgInputEl.click());
@@ -3297,9 +3367,9 @@ profileBgInputEl.addEventListener('change', async () => {
   if (!file || !profileCardRole) return;
   const raw = await fileToDataUrl(file);
   const dataUrl = await resizeImageDataUrl(raw, 960);
-  const profile = getProfile(profileCardRole);
+  const profile = getConvProfile(profileCardRole);
   profile.background = dataUrl;
-  saveProfile(profileCardRole, profile);
+  await saveConvProfile(profileCardRole, profile);
   profileBgEl.style.backgroundImage = `url(${dataUrl})`;
   profileBgInputEl.value = '';
 });
@@ -3390,7 +3460,7 @@ function formatCurrentTimeForPrompt() {
 function renderSingleRow(m, textContent, opts) {
   opts = opts || {};
   const role = m.role === 'user' ? 'user' : 'ai';
-  const profile = getProfile(role);
+  const profile = getConvProfile(role);
 
   const row = document.createElement('div');
   row.className = 'msg-row ' + role;
@@ -3561,7 +3631,7 @@ function scrollToBottom() {
 
 /* ---------- Typing indicator + staged reveal ---------- */
 function createTypingRow() {
-  const profile = getProfile('ai');
+  const profile = getConvProfile('ai');
   const row = document.createElement('div');
   row.className = 'msg-row ai';
 
