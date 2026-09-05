@@ -92,6 +92,18 @@
     font-size: 13px;
   }
   #new-conv-btn:hover:not(:disabled) { background: var(--accent-hover); }
+  #export-import-row { display: flex; gap: 6px; margin-top: 8px; }
+  #export-import-row button {
+    flex: 1;
+    padding: 7px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: transparent;
+    color: var(--text-soft);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #export-import-row button:hover { background: var(--surface-hover); color: var(--accent); }
   #nav-menu {
     display: flex;
     flex-direction: column;
@@ -657,6 +669,9 @@
     color: var(--text-soft);
     margin-top: 2px;
   }
+  .quality-row { display: flex; align-items: center; gap: 10px; }
+  .quality-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .quality-row span { font-size: 12.5px; color: var(--text-soft); min-width: 34px; text-align: right; }
 
   /* ---------- Profile editing (in settings) ---------- */
   .profile-edit-row {
@@ -896,6 +911,11 @@
   <div id="sidebar">
     <div id="sidebar-header">
       <button id="new-conv-btn">＋ 新建对话</button>
+      <div id="export-import-row">
+        <button type="button" id="export-conv-btn">导出对话</button>
+        <button type="button" id="import-conv-btn">导入对话</button>
+        <input type="file" id="import-conv-input" accept="application/json,.json" style="display:none">
+      </div>
     </div>
     <nav id="nav-menu">
       <button type="button" class="nav-item active" data-nav="chat"><span class="nav-icon">💬</span><span class="nav-label">聊天</span></button>
@@ -972,6 +992,14 @@
           </div>
         </div>
         <div class="settings-section">
+          <label class="settings-label">发送图片质量</label>
+          <div class="quality-row">
+            <input type="range" id="image-quality-input" min="0.3" max="1" step="0.05">
+            <span id="image-quality-value"></span>
+          </div>
+          <span class="toggle-hint">发送前会先压缩到最大宽度 1024px；数值越低文件越小、画质越糊</span>
+        </div>
+        <div class="settings-section">
           <label class="settings-label">分条发送</label>
           <label class="toggle-row">
             <input type="checkbox" id="split-toggle-input">
@@ -983,6 +1011,20 @@
         <div class="modal-actions">
           <button class="secondary" id="settings-cancel">取消</button>
           <button class="primary" id="settings-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="export-modal" hidden>
+      <div class="modal-card">
+        <h2>导出对话</h2>
+        <p class="settings-label" style="font-weight: 400; margin-bottom: 16px;">
+          选择导出模式，会把全部对话打包成一个 JSON 文件下载。
+        </p>
+        <div class="modal-actions">
+          <button class="secondary" id="export-cancel-btn">取消</button>
+          <button class="secondary" id="export-text-only-btn">纯文字</button>
+          <button class="primary" id="export-with-images-btn">含图片</button>
         </div>
       </div>
     </div>
@@ -1050,6 +1092,8 @@ const DEFAULT_USER_COLOR = '#dcf6e1';
 const SPLIT_MAX_LENGTH = 200;
 const SPLIT_DELAY_MIN_MS = 800;
 const SPLIT_DELAY_RANGE_MS = 700;
+const IMAGE_MAX_WIDTH = 1024;
+const DEFAULT_IMAGE_QUALITY = 0.8;
 const DEFAULT_PROFILES = {
   user: { avatar: null, nickname: '美婷', bio: '', background: null },
   ai: { avatar: null, nickname: 'cc', bio: '', background: null }
@@ -1061,6 +1105,13 @@ const sidebarToggleBtnEl = document.getElementById('sidebar-toggle-btn');
 const sidebarBackdropEl = document.getElementById('sidebar-backdrop');
 const newConvBtnEl = document.getElementById('new-conv-btn');
 const convListEl = document.getElementById('conv-list');
+const exportConvBtnEl = document.getElementById('export-conv-btn');
+const importConvBtnEl = document.getElementById('import-conv-btn');
+const importConvInputEl = document.getElementById('import-conv-input');
+const exportModalEl = document.getElementById('export-modal');
+const exportCancelBtnEl = document.getElementById('export-cancel-btn');
+const exportTextOnlyBtnEl = document.getElementById('export-text-only-btn');
+const exportWithImagesBtnEl = document.getElementById('export-with-images-btn');
 const navMenuEl = document.getElementById('nav-menu');
 const toastEl = document.getElementById('toast');
 const memoryModalEl = document.getElementById('memory-modal');
@@ -1089,6 +1140,8 @@ const aiColorInputEl = document.getElementById('ai-color-input');
 const userColorInputEl = document.getElementById('user-color-input');
 const resetColorsBtnEl = document.getElementById('reset-colors-btn');
 const splitToggleInputEl = document.getElementById('split-toggle-input');
+const imageQualityInputEl = document.getElementById('image-quality-input');
+const imageQualityValueEl = document.getElementById('image-quality-value');
 const userAvatarPreviewEl = document.getElementById('user-avatar-preview');
 const userAvatarInputEl = document.getElementById('user-avatar-input');
 const userNicknameInputEl = document.getElementById('user-nickname-input');
@@ -1105,16 +1158,91 @@ const profileCardNameEl = document.getElementById('profile-card-name');
 const profileCardBioEl = document.getElementById('profile-card-bio');
 const profileCardCloseEl = document.getElementById('profile-card-close');
 
-/* ---------- Conversation state ---------- */
-let conversations = loadConversations();
-let currentId = localStorage.getItem('meiting-chat-current-id');
-if (!conversations.length) {
-  createConversation();
-} else if (!currentId || !conversations.some(c => c.id === currentId)) {
-  currentId = conversations[0].id;
-  localStorage.setItem('meiting-chat-current-id', currentId);
+/* ---------- IndexedDB storage ----------
+   对话数据（含图片的 base64）改存 IndexedDB，不再用 localStorage——localStorage
+   通常只有几 MB 配额，聊天记录带图片很快就顶满；IndexedDB 常见配额是磁盘可用
+   空间的一个大比例（通常是 GB 级别），而且原生异步，存大对象不会卡主线程。 */
+const IDB_NAME = 'meiting-chat-db';
+const IDB_VERSION = 1;
+const IDB_STORE_CONVERSATIONS = 'conversations';
+const IDB_STORE_META = 'meta';
+let idbPromise = null;
+
+function openIdb() {
+  if (idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE_CONVERSATIONS)) {
+        db.createObjectStore(IDB_STORE_CONVERSATIONS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(IDB_STORE_META)) {
+        db.createObjectStore(IDB_STORE_META);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return idbPromise;
 }
-let messages = getCurrentConversation().messages;
+
+async function idbGetAllConversations() {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_CONVERSATIONS, 'readonly');
+    const req = tx.objectStore(IDB_STORE_CONVERSATIONS).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPutConversations(list) {
+  if (!list.length) return;
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_CONVERSATIONS, 'readwrite');
+    const store = tx.objectStore(IDB_STORE_CONVERSATIONS);
+    for (const c of list) store.put(c);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbDeleteConversation(id) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_CONVERSATIONS, 'readwrite');
+    tx.objectStore(IDB_STORE_CONVERSATIONS).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGetMeta(key) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_META, 'readonly');
+    const req = tx.objectStore(IDB_STORE_META).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSetMeta(key, value) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_META, 'readwrite');
+    tx.objectStore(IDB_STORE_META).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* ---------- Conversation state ---------- */
+let conversations = [];
+let currentId = null;
+let messages = [];
 let pendingImages = [];
 
 function genId() {
@@ -1127,49 +1255,66 @@ function deriveTitle(msg) {
   return '新对话';
 }
 
-function loadConversations() {
+/* 老版本存在 localStorage 里的对话数据一次性搬进 IndexedDB，成功后清掉
+   localStorage 那几个键，把配额还回去——这正是这次迁移要解决的问题。只在
+   IndexedDB 里还没有任何对话时才会走这条路，不会覆盖已经在用 IndexedDB 的数据。 */
+async function migrateLocalStorageConversationsIfNeeded() {
+  let list = [];
   try {
     const raw = localStorage.getItem('meiting-chat-conversations');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) list = parsed;
     }
   } catch (e) {}
-  try {
-    const oldRaw = localStorage.getItem('meiting-chat-messages');
-    if (oldRaw) {
-      const oldMessages = JSON.parse(oldRaw);
-      if (Array.isArray(oldMessages) && oldMessages.length) {
-        const conv = {
-          id: genId(),
-          title: deriveTitle(oldMessages.find(m => m.role === 'user')),
-          messages: oldMessages,
-          updatedAt: Date.now()
-        };
-        localStorage.removeItem('meiting-chat-messages');
-        localStorage.setItem('meiting-chat-conversations', JSON.stringify([conv]));
-        return [conv];
+  if (!list.length) {
+    try {
+      const oldRaw = localStorage.getItem('meiting-chat-messages');
+      if (oldRaw) {
+        const oldMessages = JSON.parse(oldRaw);
+        if (Array.isArray(oldMessages) && oldMessages.length) {
+          list = [{
+            id: genId(),
+            title: deriveTitle(oldMessages.find(m => m.role === 'user')),
+            messages: oldMessages,
+            updatedAt: Date.now()
+          }];
+        }
       }
-    }
-  } catch (e) {}
-  return [];
+    } catch (e) {}
+  }
+  if (list.length) {
+    await idbPutConversations(list);
+    const oldCurrentId = localStorage.getItem('meiting-chat-current-id');
+    if (oldCurrentId) await idbSetMeta('currentId', oldCurrentId);
+  }
+  localStorage.removeItem('meiting-chat-conversations');
+  localStorage.removeItem('meiting-chat-messages');
+  localStorage.removeItem('meiting-chat-current-id');
+  return list;
 }
 
-function saveConversations() {
-  localStorage.setItem('meiting-chat-conversations', JSON.stringify(conversations));
+async function loadConversations() {
+  const existing = await idbGetAllConversations();
+  if (existing.length) return existing;
+  return migrateLocalStorageConversationsIfNeeded();
+}
+
+async function saveConversations() {
+  await idbPutConversations(conversations);
 }
 
 function getCurrentConversation() {
   return conversations.find(c => c.id === currentId);
 }
 
-function createConversation() {
+async function createConversation() {
   const conv = { id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '' };
   conversations.unshift(conv);
   currentId = conv.id;
-  localStorage.setItem('meiting-chat-current-id', currentId);
-  saveConversations();
-  fetchSessionMemoryFor(conv.id);
+  await idbSetMeta('currentId', currentId);
+  await saveConversations();
+  fetchSessionMemoryFor(conv.id);   // 后台拉记忆，不阻塞新建对话
   return conv;
 }
 
@@ -1187,40 +1332,40 @@ async function fetchSessionMemoryFor(convId) {
     const conv = conversations.find(c => c.id === convId);
     if (conv && text) {
       conv.memoryContext = text;
-      saveConversations();
+      await saveConversations();
     }
   } catch (e) {
     console.warn('latent_session_start 获取失败：', e.message);
   }
 }
 
-function switchConversation(id) {
+async function switchConversation(id) {
   if (id === currentId) return;
   currentId = id;
-  localStorage.setItem('meiting-chat-current-id', currentId);
+  await idbSetMeta('currentId', currentId);
   messages = getCurrentConversation().messages;
   renderAll();
   renderSidebar();
   closeSidebarOnMobile();
 }
 
-function deleteConversation(id, evt) {
+async function deleteConversation(id, evt) {
   if (evt) evt.stopPropagation();
   if (!confirm('确定要删除这个对话吗？此操作无法撤销。')) return;
   const idx = conversations.findIndex(c => c.id === id);
   if (idx === -1) return;
   conversations.splice(idx, 1);
+  await idbDeleteConversation(id);
   if (id === currentId) {
     if (conversations.length) {
       currentId = conversations[0].id;
-      localStorage.setItem('meiting-chat-current-id', currentId);
+      await idbSetMeta('currentId', currentId);
     } else {
-      createConversation();
+      await createConversation();
     }
     messages = getCurrentConversation().messages;
     renderAll();
   }
-  saveConversations();
   renderSidebar();
 }
 
@@ -1245,12 +1390,93 @@ function renderSidebar() {
   }
 }
 
-newConvBtnEl.addEventListener('click', () => {
-  createConversation();
+newConvBtnEl.addEventListener('click', async () => {
+  await createConversation();
   messages = getCurrentConversation().messages;
   renderAll();
   renderSidebar();
   closeSidebarOnMobile();
+});
+
+/* ---------- Export / Import ---------- */
+function formatDateForFilename(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function buildExportPayload(mode) {
+  const convsOut = conversations.map(c => {
+    const messagesOut = c.messages.map(m => {
+      const copy = Object.assign({}, m);
+      if (mode === 'text-only') delete copy.images;
+      return copy;
+    });
+    return Object.assign({}, c, { messages: messagesOut });
+  });
+  return { app: 'meiting-chat', exportedAt: new Date().toISOString(), mode, conversations: convsOut };
+}
+
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportConversations(mode) {
+  const payload = buildExportPayload(mode);
+  const suffix = mode === 'text-only' ? '纯文字' : '含图片';
+  downloadJson(payload, `meiting-chat-导出-${formatDateForFilename(new Date())}-${suffix}.json`);
+  exportModalEl.hidden = true;
+}
+
+exportConvBtnEl.addEventListener('click', () => { exportModalEl.hidden = false; });
+exportCancelBtnEl.addEventListener('click', () => { exportModalEl.hidden = true; });
+exportModalEl.addEventListener('click', (e) => {
+  if (e.target === exportModalEl) exportModalEl.hidden = true;
+});
+exportTextOnlyBtnEl.addEventListener('click', () => exportConversations('text-only'));
+exportWithImagesBtnEl.addEventListener('click', () => exportConversations('with-images'));
+
+importConvBtnEl.addEventListener('click', () => importConvInputEl.click());
+importConvInputEl.addEventListener('change', async () => {
+  const file = importConvInputEl.files && importConvInputEl.files[0];
+  importConvInputEl.value = '';
+  if (!file) return;
+  let payload;
+  try {
+    const text = await file.text();
+    payload = JSON.parse(text);
+  } catch (e) {
+    alert('导入失败：文件不是合法的 JSON');
+    return;
+  }
+  const list = Array.isArray(payload) ? payload : payload.conversations;
+  if (!Array.isArray(list) || !list.length) {
+    alert('导入失败：文件里没有找到对话记录');
+    return;
+  }
+  if (!confirm(`确定要导入 ${list.length} 条对话吗？会追加到现有对话列表里，不会覆盖已有对话。`)) return;
+  const existingIds = new Set(conversations.map(c => c.id));
+  const imported = [];
+  for (const conv of list) {
+    if (!conv || typeof conv !== 'object' || !Array.isArray(conv.messages)) continue;
+    const clone = Object.assign({}, conv);
+    if (!clone.id || existingIds.has(clone.id)) clone.id = genId();
+    existingIds.add(clone.id);
+    if (!clone.title) clone.title = deriveTitle(clone.messages.find(m => m.role === 'user'));
+    clone.updatedAt = clone.updatedAt || Date.now();
+    conversations.unshift(clone);
+    imported.push(clone);
+  }
+  await saveConversations();
+  renderSidebar();
+  alert(`导入完成，新增了 ${imported.length} 条对话。`);
 });
 
 /* ---------- Toast ---------- */
@@ -1380,7 +1606,7 @@ sidebarBackdropEl.addEventListener('click', () => {
   applySidebarState();
 });
 applySidebarState();
-renderSidebar();
+// renderSidebar() 移到 boot() 里，等 IndexedDB 里的对话数据真正加载完再画
 
 /* ---------- Sending-state lock (prevents switching conversations mid-reply) ---------- */
 function setSendingState(isSending) {
@@ -1409,6 +1635,12 @@ function getSystemPrompt() {
 function getSplitEnabled() {
   const stored = localStorage.getItem('meiting-chat-split-enabled');
   return stored === null ? true : stored === 'true';
+}
+
+function getImageQuality() {
+  const stored = localStorage.getItem('meiting-chat-image-quality');
+  const n = stored !== null ? parseFloat(stored) : NaN;
+  return Number.isFinite(n) && n > 0 && n <= 1 ? n : DEFAULT_IMAGE_QUALITY;
 }
 
 /* ---------- Profiles (avatar / nickname / bio / background) ---------- */
@@ -1586,6 +1818,8 @@ settingsBtnEl.addEventListener('click', () => {
   userColorInputEl.value = savedColors.user;
   applyColors(savedColors.ai, savedColors.user);
   splitToggleInputEl.checked = getSplitEnabled();
+  imageQualityInputEl.value = getImageQuality();
+  imageQualityValueEl.textContent = Math.round(imageQualityInputEl.value * 100) + '%';
 
   profileDraft.user = getProfile('user');
   profileDraft.ai = getProfile('ai');
@@ -1645,6 +1879,10 @@ resetColorsBtnEl.addEventListener('click', () => {
   applyColors(DEFAULT_AI_COLOR, DEFAULT_USER_COLOR);
 });
 
+imageQualityInputEl.addEventListener('input', () => {
+  imageQualityValueEl.textContent = Math.round(imageQualityInputEl.value * 100) + '%';
+});
+
 settingsSaveEl.addEventListener('click', () => {
   localStorage.setItem('meiting-chat-system-prompt', systemPromptInputEl.value);
   savedColors.ai = aiColorInputEl.value;
@@ -1653,6 +1891,7 @@ settingsSaveEl.addEventListener('click', () => {
   localStorage.setItem('meiting-chat-color-user', savedColors.user);
   applyColors(savedColors.ai, savedColors.user);
   localStorage.setItem('meiting-chat-split-enabled', String(splitToggleInputEl.checked));
+  localStorage.setItem('meiting-chat-image-quality', imageQualityInputEl.value);
 
   profileDraft.user.nickname = userNicknameInputEl.value.trim() || DEFAULT_PROFILES.user.nickname;
   profileDraft.ai.nickname = aiNicknameInputEl.value.trim() || DEFAULT_PROFILES.ai.nickname;
@@ -1739,7 +1978,7 @@ profileBgInputEl.addEventListener('change', async () => {
 });
 
 /* ---------- Message persistence ---------- */
-function saveMessages() {
+async function saveMessages() {
   const conv = getCurrentConversation();
   if (!conv) return;
   conv.messages = messages;
@@ -1748,7 +1987,7 @@ function saveMessages() {
     const firstUser = messages.find(m => m.role === 'user');
     if (firstUser) conv.title = deriveTitle(firstUser);
   }
-  saveConversations();
+  await saveConversations();
   renderSidebar();
 }
 
@@ -2036,19 +2275,29 @@ async function revealAssistantMessage(m) {
 /* 不管原始文件是什么格式，一律经 canvas 重新画一遍导出成 PNG，media_type 固定
    写 image/png——避免用户发的图片原始格式（webp/bmp 等）不在 API 支持列表里
    导致报错。*/
+/* 不管原始文件是什么格式，一律经 canvas 重新画一遍：缩到最大宽度 IMAGE_MAX_WIDTH
+   （不放大小图），按设置里的质量滑块导出成 JPEG——JPEG 才有"质量"这个概念，
+   PNG 是无损格式，quality 参数对它不起作用。media_type 固定写 image/jpeg，
+   同时也顺带解决了原始格式不在 API 支持列表里导致报错的问题。 */
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
+        let width = img.naturalWidth;
+        let height = img.naturalHeight;
+        if (width > IMAGE_MAX_WIDTH) {
+          height = Math.round(height * IMAGE_MAX_WIDTH / width);
+          width = IMAGE_MAX_WIDTH;
+        }
         const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', getImageQuality());
         const base64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
-        resolve({ media_type: 'image/png', data: base64 });
+        resolve({ media_type: 'image/jpeg', data: base64 });
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -2104,10 +2353,10 @@ textInputEl.addEventListener('keydown', (e) => {
 
 sendBtnEl.addEventListener('click', sendMessage);
 
-clearBtnEl.addEventListener('click', () => {
+clearBtnEl.addEventListener('click', async () => {
   if (confirm('确定要清空当前对话的聊天记录吗？')) {
     messages.length = 0;
-    saveMessages();
+    await saveMessages();
     renderAll();
   }
 });
@@ -2169,7 +2418,7 @@ async function sendMessage() {
 
   const userMsg = { role: 'user', text, images: pendingImages, timestamp: Date.now() };
   messages.push(userMsg);
-  saveMessages();
+  await saveMessages();
   renderAll();
 
   textInputEl.value = '';
@@ -2178,7 +2427,7 @@ async function sendMessage() {
   renderPreview();
 
   const apiMessages = await buildApiMessages();
-  saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片
+  await saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片
 
   const assistantMsg = { role: 'assistant', text: '', thinking: '', usage: null, streaming: true };
   messages.push(assistantMsg);
@@ -2217,7 +2466,7 @@ async function sendMessage() {
       typingRow.remove();
       messages.pop();
       messages.push({ role: 'assistant', text: `⚠️ 请求出错：${errMsg}`, timestamp: Date.now() });
-      saveMessages();
+      await saveMessages();
       renderAll();
       return;
     }
@@ -2250,13 +2499,13 @@ async function sendMessage() {
     assistantMsg.timestamp = Date.now();
     typingRow.remove();
     await revealAssistantMessage(assistantMsg);
-    saveMessages();
+    await saveMessages();
     renderTotalsBar();
   } catch (err) {
     typingRow.remove();
     messages.pop();
     messages.push({ role: 'assistant', text: `⚠️ 网络请求失败：${err.message}`, timestamp: Date.now() });
-    saveMessages();
+    await saveMessages();
     renderAll();
   } finally {
     setSendingState(false);
@@ -2293,7 +2542,21 @@ function applyStreamEvent(data, msg) {
   }
 }
 
-renderAll();
+/* ---------- Boot ---------- */
+async function boot() {
+  conversations = await loadConversations();
+  currentId = await idbGetMeta('currentId');
+  if (!conversations.length) {
+    await createConversation();
+  } else if (!currentId || !conversations.some(c => c.id === currentId)) {
+    currentId = conversations[0].id;
+    await idbSetMeta('currentId', currentId);
+  }
+  messages = getCurrentConversation().messages;
+  renderSidebar();
+  renderAll();
+}
+boot();
 </script>
 </body>
 </html>
