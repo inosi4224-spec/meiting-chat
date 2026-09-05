@@ -647,6 +647,42 @@
     color: var(--text); font-size: 13px; outline: none;
   }
   .context-trim-count-row input[type="number"]:focus { border-color: var(--accent); }
+
+  /* ---------- API presets ---------- */
+  #current-preset-badge {
+    background: var(--surface);
+    color: var(--accent);
+    font-weight: 600;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .preset-list { max-height: 220px; overflow-y: auto; margin-bottom: 10px; }
+  .preset-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: 10px;
+    margin-bottom: 6px; font-size: 13px;
+  }
+  .preset-item-info { flex: 1; min-width: 0; }
+  .preset-item-name { color: var(--text); font-weight: 600; }
+  .preset-item-meta { color: var(--text-soft); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preset-item button {
+    padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border-soft);
+    background: transparent; color: var(--text-soft); font-size: 12px; cursor: pointer; flex-shrink: 0;
+  }
+  .preset-item button:hover { background: var(--surface-hover); color: var(--accent); }
+  .preset-list-empty { color: var(--text-soft); font-size: 12.5px; text-align: center; padding: 12px 0; }
+  .preset-picker-list { max-height: 300px; overflow-y: auto; margin-bottom: 4px; }
+  .preset-picker-item {
+    display: block; width: 100%; text-align: left;
+    padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px;
+    margin-bottom: 8px; background: var(--surface); color: var(--text);
+    font-size: 13px; cursor: pointer;
+  }
+  .preset-picker-item:hover { border-color: var(--accent); background: var(--surface-hover); }
+  .preset-picker-item-name { font-weight: 600; }
+  .preset-picker-item-meta { color: var(--text-soft); font-size: 11.5px; margin-top: 3px; }
   .color-row {
     display: flex;
     align-items: center;
@@ -1128,13 +1164,7 @@
     <header>
       <button class="secondary" id="sidebar-toggle-btn" title="对话列表">☰</button>
       <h1>Meiting Chat</h1>
-      <select id="model-select">
-        <option value="claude-opus-4-6">claude-opus-4-6</option>
-        <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
-        <option value="deepseek-chat">DeepSeek Chat（备线）</option>
-        <option value="deepseek-reasoner">DeepSeek Reasoner（备线）</option>
-      </select>
-      <input type="password" id="api-key" placeholder="填入七牛云 API Key (sk-...)">
+      <button type="button" class="secondary" id="current-preset-badge" title="当前对话使用的 API 预设"></button>
       <button class="secondary" id="theme-toggle-btn" title="切换深色模式">🌙</button>
       <button class="secondary" id="files-btn">文件</button>
       <button class="secondary" id="settings-btn">设置</button>
@@ -1154,28 +1184,17 @@
           <textarea id="system-prompt-input"></textarea>
         </div>
         <div class="settings-section">
+          <label class="settings-label">当前对话使用的 API 预设——只影响这一个对话</label>
+          <select class="settings-text-input" id="conv-preset-select"></select>
+        </div>
+        <div class="settings-section">
           <label class="settings-label">当前对话的系统提示词——只影响这一个对话，不影响全局默认</label>
           <textarea id="conv-system-prompt-input"></textarea>
         </div>
         <div class="settings-section">
-          <label class="settings-label">DeepSeek API Key（备线）</label>
-          <input type="password" class="settings-text-input" id="deepseek-api-key-input" placeholder="填入 DeepSeek API Key (sk-...)">
-          <span class="toggle-hint">模型选到 DeepSeek Chat / DeepSeek Reasoner 时会改用这个 Key，走 DeepSeek 官方接口（OpenAI 协议），不再用七牛云</span>
-        </div>
-        <div class="settings-section">
-          <label class="settings-label">API 预设 — 记忆库连接</label>
-          <label class="toggle-row">
-            <input type="checkbox" id="claude-memory-toggle-input">
-            <span>Claude 预设：连接 Latent 记忆库
-              <span class="toggle-hint">选中 Claude 模型发消息时自动带上历史记忆摘要（需要本地记忆服务已启动）</span>
-            </span>
-          </label>
-          <label class="toggle-row" style="margin-top: 10px;">
-            <input type="checkbox" id="deepseek-memory-toggle-input">
-            <span>DeepSeek 预设：连接 Latent 记忆库
-              <span class="toggle-hint">默认关闭——DeepSeek 走独立的官方接口，跟本机记忆服务没有天然关联</span>
-            </span>
-          </label>
+          <label class="settings-label">API 预设管理</label>
+          <div class="preset-list" id="preset-list"></div>
+          <button type="button" class="secondary" id="preset-add-btn">＋ 新建预设</button>
         </div>
         <div class="settings-section">
           <label class="settings-label">上下文裁剪</label>
@@ -1245,6 +1264,61 @@
         <div class="modal-actions">
           <button class="secondary" id="settings-cancel">取消</button>
           <button class="primary" id="settings-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="preset-edit-modal" hidden>
+      <div class="modal-card">
+        <h2 id="preset-edit-title">新建 API 预设</h2>
+        <div class="settings-section">
+          <label class="settings-label">名称</label>
+          <input type="text" class="settings-text-input" id="preset-name-input" placeholder="比如：七牛云 Opus">
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">请求协议</label>
+          <select class="settings-text-input" id="preset-protocol-select">
+            <option value="anthropic">Anthropic（Claude Messages API）</option>
+            <option value="openai">OpenAI 兼容（chat/completions）</option>
+          </select>
+          <span class="toggle-hint">决定怎么拼请求、怎么鉴权——不确定的话看 endpoint：路径是 /v1/messages 选 Anthropic，是 /chat/completions 选 OpenAI 兼容</span>
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">API endpoint</label>
+          <input type="text" class="settings-text-input" id="preset-endpoint-input" placeholder="https://api.qnaigc.com/v1/messages">
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">API Key</label>
+          <input type="password" class="settings-text-input" id="preset-apikey-input" placeholder="sk-...">
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">默认模型</label>
+          <input type="text" class="settings-text-input" id="preset-model-input" placeholder="比如：claude-opus-4-6">
+        </div>
+        <div class="settings-section">
+          <label class="toggle-row">
+            <input type="checkbox" id="preset-memory-toggle-input">
+            <span>连接 Latent 记忆库
+              <span class="toggle-hint">用这个预设的对话，新建时自动拉一次历史记忆摘要，发消息时自动带上</span>
+            </span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" id="preset-delete-btn" hidden>删除</button>
+          <button class="secondary" id="preset-edit-cancel">取消</button>
+          <button class="primary" id="preset-edit-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="preset-picker-modal" hidden>
+      <div class="modal-card">
+        <h2>选择 API 预设</h2>
+        <p class="settings-label" style="font-weight: 400;">新对话要用哪个预设？之后这条对话会一直用它，随时可以在设置里改。</p>
+        <div class="preset-picker-list" id="preset-picker-list"></div>
+        <div class="modal-actions">
+          <button class="secondary" id="preset-picker-cancel">取消</button>
+          <button class="secondary" id="preset-picker-manage-btn">去管理预设</button>
         </div>
       </div>
     </div>
@@ -1423,19 +1497,15 @@
 <div id="drop-overlay" hidden><div id="drop-overlay-text">松开发送图片</div></div>
 
 <script>
-const CLAUDE_API_ENDPOINT = "https://api.qnaigc.com/v1/messages";
-const DEEPSEEK_API_ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
-const DEEPSEEK_MODELS = new Set(['deepseek-chat', 'deepseek-reasoner']);
-function getProvider(model) {
-  return DEEPSEEK_MODELS.has(model) ? 'deepseek' : 'claude';
-}
+// 只在"迁移旧配置成默认预设"那一次性逻辑里用得到，不再是发消息时走的常量
+const LEGACY_CLAUDE_ENDPOINT = "https://api.qnaigc.com/v1/messages";
+const LEGACY_DEEPSEEK_ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
 const LATENT_ENDPOINT = "http://127.0.0.1:8765/mcp";
 const MAX_TOKENS = 8000;
 const THINKING_CONFIG_BY_MODEL = {
   'claude-opus-4-6': { type: 'adaptive', display: 'summarized' },
   'claude-sonnet-4-20250514': { type: 'enabled', budget_tokens: 4000 }
 };
-const DEFAULT_MODEL = 'claude-opus-4-6';
 const DEFAULT_SYSTEM_PROMPT = '你必须使用中文进行思考（thinking），思考链和回复都用中文。';
 const DEFAULT_AI_COLOR = '#dceeff';
 const DEFAULT_USER_COLOR = '#dcf6e1';
@@ -1515,8 +1585,7 @@ const memoryResultsEl = document.getElementById('memory-results');
 const memoryCloseEl = document.getElementById('memory-close');
 
 const chatEl = document.getElementById('chat');
-const apiKeyEl = document.getElementById('api-key');
-const modelSelectEl = document.getElementById('model-select');
+const currentPresetBadgeEl = document.getElementById('current-preset-badge');
 const textInputEl = document.getElementById('text-input');
 const sendBtnEl = document.getElementById('send-btn');
 const imgBtnEl = document.getElementById('img-btn');
@@ -1530,9 +1599,24 @@ const settingsBtnEl = document.getElementById('settings-btn');
 const settingsModalEl = document.getElementById('settings-modal');
 const systemPromptInputEl = document.getElementById('system-prompt-input');
 const convSystemPromptInputEl = document.getElementById('conv-system-prompt-input');
-const deepseekApiKeyInputEl = document.getElementById('deepseek-api-key-input');
-const claudeMemoryToggleInputEl = document.getElementById('claude-memory-toggle-input');
-const deepseekMemoryToggleInputEl = document.getElementById('deepseek-memory-toggle-input');
+const convPresetSelectEl = document.getElementById('conv-preset-select');
+const presetListEl = document.getElementById('preset-list');
+const presetAddBtnEl = document.getElementById('preset-add-btn');
+const presetEditModalEl = document.getElementById('preset-edit-modal');
+const presetEditTitleEl = document.getElementById('preset-edit-title');
+const presetNameInputEl = document.getElementById('preset-name-input');
+const presetProtocolSelectEl = document.getElementById('preset-protocol-select');
+const presetEndpointInputEl = document.getElementById('preset-endpoint-input');
+const presetApiKeyInputEl = document.getElementById('preset-apikey-input');
+const presetModelInputEl = document.getElementById('preset-model-input');
+const presetMemoryToggleInputEl = document.getElementById('preset-memory-toggle-input');
+const presetDeleteBtnEl = document.getElementById('preset-delete-btn');
+const presetEditCancelEl = document.getElementById('preset-edit-cancel');
+const presetEditSaveEl = document.getElementById('preset-edit-save');
+const presetPickerModalEl = document.getElementById('preset-picker-modal');
+const presetPickerListEl = document.getElementById('preset-picker-list');
+const presetPickerCancelEl = document.getElementById('preset-picker-cancel');
+const presetPickerManageBtnEl = document.getElementById('preset-picker-manage-btn');
 const contextTrimToggleInputEl = document.getElementById('context-trim-toggle-input');
 const contextTrimKeepCountInputEl = document.getElementById('context-trim-keep-count-input');
 const settingsSaveEl = document.getElementById('settings-save');
@@ -1564,10 +1648,11 @@ const profileCardCloseEl = document.getElementById('profile-card-close');
    通常只有几 MB 配额，聊天记录带图片很快就顶满；IndexedDB 常见配额是磁盘可用
    空间的一个大比例（通常是 GB 级别），而且原生异步，存大对象不会卡主线程。 */
 const IDB_NAME = 'meiting-chat-db';
-const IDB_VERSION = 2;   // v2 加了 diaries store
+const IDB_VERSION = 3;   // v2 加了 diaries store，v3 加了 presets store
 const IDB_STORE_CONVERSATIONS = 'conversations';
 const IDB_STORE_META = 'meta';
 const IDB_STORE_DIARIES = 'diaries';
+const IDB_STORE_PRESETS = 'presets';
 let idbPromise = null;
 
 function openIdb() {
@@ -1584,6 +1669,9 @@ function openIdb() {
       }
       if (!db.objectStoreNames.contains(IDB_STORE_DIARIES)) {
         db.createObjectStore(IDB_STORE_DIARIES, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(IDB_STORE_PRESETS)) {
+        db.createObjectStore(IDB_STORE_PRESETS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -1674,29 +1762,34 @@ async function idbDeleteDiary(id) {
   });
 }
 
-/* ---------- DeepSeek 备线：Key 和当前选中的模型都存 IndexedDB 的 meta 表
-   （复用已有的 idbGetMeta/idbSetMeta，不另开新 store）。模型选择原来存在
-   localStorage 里，这里做一次性迁移：读到旧值就搬进 IndexedDB 并清掉旧 key，
-   之后只认 IndexedDB。 */
-async function getDeepseekApiKey() {
-  return (await idbGetMeta('deepseekApiKey')) || '';
+async function idbGetAllPresets() {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_PRESETS, 'readonly');
+    const req = tx.objectStore(IDB_STORE_PRESETS).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
 }
-async function setDeepseekApiKey(key) {
-  await idbSetMeta('deepseekApiKey', key);
+
+async function idbPutPreset(preset) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_PRESETS, 'readwrite');
+    tx.objectStore(IDB_STORE_PRESETS).put(preset);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
-async function getSelectedModel() {
-  const stored = await idbGetMeta('selectedModel');
-  if (stored) return stored;
-  const legacy = localStorage.getItem('meiting-chat-model');
-  if (legacy) {
-    await idbSetMeta('selectedModel', legacy);
-    localStorage.removeItem('meiting-chat-model');
-    return legacy;
-  }
-  return DEFAULT_MODEL;
-}
-async function setSelectedModel(model) {
-  await idbSetMeta('selectedModel', model);
+
+async function idbDeletePreset(id) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_PRESETS, 'readwrite');
+    tx.objectStore(IDB_STORE_PRESETS).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 async function getContextTrimEnabled() {
@@ -1713,30 +1806,60 @@ async function setContextTrimKeepCount(n) {
   await idbSetMeta('contextTrimKeepCount', n);
 }
 
-/* ---------- 记忆库连接：按 API 预设（provider）区分，不是按对话 ----------
-   "预设" 目前就是模型下拉框里已经分好的两档——Claude / DeepSeek，还没有更细的
-   多预设管理，所以这里按 provider 存一对开关就够了。Claude 默认开、DeepSeek
-   默认关（第一次读、IndexedDB 里还没存过值时才用这个默认，不是每次都覆盖）。
-   连不连是发送那一刻"当前选中的模型属于哪个 provider"动态判断的，不是在对话
-   创建时钉死——同一条对话如果中途把模型从 Claude 切到 DeepSeek，从切换后那条
-   消息开始就不再带记忆库内容了，符合"跟 API 预设绑定"而不是"跟对话绑定"。 */
-async function getClaudeMemoryConnected() {
-  const stored = await idbGetMeta('claudeMemoryConnected');
-  return stored === undefined ? true : !!stored;
+
+/* ---------- API 预设 (presets) ----------
+   每个预设 = 一套完整的调用配置（名称/协议/endpoint/key/默认模型/是否连记忆库）。
+   每条对话创建时绑定一个预设的 id（conv.presetId），之后固定用它，除非在设置里
+   手动切换——绑定的是预设本身，不是对话创建那一刻"当前选中的模型"，所以同一条
+   对话不会因为别的对话换了预设就跟着变。首次启动、IndexedDB 里还没有任何预设时，
+   把上一版"Claude 走七牛云 + DeepSeek 走官方接口"那套写死的配置迁移成 4 个默认
+   预设，尽量带上旧的 Key 和记忆库连接开关，不让升级后要重新配置一遍。 */
+let presets = [];
+
+function getPresetById(id) {
+  return presets.find(p => p.id === id);
 }
-async function setClaudeMemoryConnected(v) {
-  await idbSetMeta('claudeMemoryConnected', !!v);
+function getCurrentPreset() {
+  const conv = getCurrentConversation();
+  return conv ? getPresetById(conv.presetId) : null;
 }
-async function getDeepseekMemoryConnected() {
-  const stored = await idbGetMeta('deepseekMemoryConnected');
-  return stored === undefined ? false : !!stored;
+
+function renderCurrentPresetBadge() {
+  const preset = getCurrentPreset();
+  currentPresetBadgeEl.textContent = preset ? `🔌 ${preset.name}` : '⚠️ 未绑定预设';
+  currentPresetBadgeEl.title = preset
+    ? `${preset.name} · ${preset.defaultModel}（点击打开设置切换）`
+    : '这条对话还没绑定 API 预设，点击打开设置去选一个';
 }
-async function setDeepseekMemoryConnected(v) {
-  await idbSetMeta('deepseekMemoryConnected', !!v);
+currentPresetBadgeEl.addEventListener('click', () => settingsBtnEl.click());
+
+async function migrateLegacyConfigToPresets() {
+  const legacyClaudeKey = localStorage.getItem('meiting-chat-api-key') || '';
+  const legacyDeepseekKey = (await idbGetMeta('deepseekApiKey')) || '';
+  const legacyClaudeMemory = await idbGetMeta('claudeMemoryConnected');
+  const legacyDeepseekMemory = await idbGetMeta('deepseekMemoryConnected');
+  const seeded = [
+    { id: genId(), name: '七牛云 Claude Opus', protocol: 'anthropic', endpoint: LEGACY_CLAUDE_ENDPOINT,
+      apiKey: legacyClaudeKey, defaultModel: 'claude-opus-4-6',
+      memoryConnected: legacyClaudeMemory === undefined ? true : !!legacyClaudeMemory },
+    { id: genId(), name: '七牛云 Claude Sonnet', protocol: 'anthropic', endpoint: LEGACY_CLAUDE_ENDPOINT,
+      apiKey: legacyClaudeKey, defaultModel: 'claude-sonnet-4-20250514',
+      memoryConnected: legacyClaudeMemory === undefined ? true : !!legacyClaudeMemory },
+    { id: genId(), name: 'DeepSeek Chat', protocol: 'openai', endpoint: LEGACY_DEEPSEEK_ENDPOINT,
+      apiKey: legacyDeepseekKey, defaultModel: 'deepseek-chat',
+      memoryConnected: legacyDeepseekMemory === undefined ? false : !!legacyDeepseekMemory },
+    { id: genId(), name: 'DeepSeek Reasoner', protocol: 'openai', endpoint: LEGACY_DEEPSEEK_ENDPOINT,
+      apiKey: legacyDeepseekKey, defaultModel: 'deepseek-reasoner',
+      memoryConnected: legacyDeepseekMemory === undefined ? false : !!legacyDeepseekMemory }
+  ];
+  for (const p of seeded) await idbPutPreset(p);
+  return seeded;
 }
-async function isMemoryConnectedForCurrentProvider() {
-  const provider = getProvider(modelSelectEl.value);
-  return provider === 'deepseek' ? getDeepseekMemoryConnected() : getClaudeMemoryConnected();
+
+async function loadPresets() {
+  const existing = await idbGetAllPresets();
+  if (existing.length) return existing;
+  return migrateLegacyConfigToPresets();
 }
 
 /* ---------- Conversation state ---------- */
@@ -1808,17 +1931,19 @@ function getCurrentConversation() {
   return conversations.find(c => c.id === currentId);
 }
 
-async function createConversation() {
+async function createConversation(presetId) {
   const conv = {
     id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '',
     systemPrompt: getSystemPrompt(),   // 继承当时的全局默认，之后这条对话自己独立修改
-    historySummary: '', summarizedUpTo: 0   // 上下文裁剪用：还没摘要过任何历史
+    historySummary: '', summarizedUpTo: 0,   // 上下文裁剪用：还没摘要过任何历史
+    presetId: presetId || (presets[0] && presets[0].id) || null   // 没传就退回第一个预设，兜底
   };
   conversations.unshift(conv);
   currentId = conv.id;
   await idbSetMeta('currentId', currentId);
   await saveConversations();
-  if (await isMemoryConnectedForCurrentProvider()) {
+  const preset = getPresetById(conv.presetId);
+  if (preset && preset.memoryConnected) {
     fetchSessionMemoryFor(conv.id);   // 后台拉记忆，不阻塞新建对话
   }
   return conv;
@@ -1852,6 +1977,7 @@ async function switchConversation(id) {
   messages = getCurrentConversation().messages;
   renderAll();
   renderSidebar();
+  renderCurrentPresetBadge();
   closeSidebarOnMobile();
 }
 
@@ -1871,6 +1997,7 @@ async function deleteConversation(id, evt) {
     }
     messages = getCurrentConversation().messages;
     renderAll();
+    renderCurrentPresetBadge();
   }
   renderSidebar();
 }
@@ -1896,12 +2023,54 @@ function renderSidebar() {
   }
 }
 
-newConvBtnEl.addEventListener('click', async () => {
-  await createConversation();
+/* 新建对话先弹预设选择框，选完才真正建对话——不直接建是因为每条对话要固定
+   绑一个预设，得先知道绑哪个。 */
+async function actuallyCreateConversationWithPreset(presetId) {
+  await createConversation(presetId);
   messages = getCurrentConversation().messages;
   renderAll();
   renderSidebar();
+  renderCurrentPresetBadge();
   closeSidebarOnMobile();
+}
+
+function renderPresetPickerList() {
+  presetPickerListEl.innerHTML = '';
+  if (!presets.length) {
+    presetPickerListEl.innerHTML = '<div class="preset-list-empty">还没有任何 API 预设，先去"管理预设"里创建一个。</div>';
+    return;
+  }
+  for (const preset of presets) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'preset-picker-item';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'preset-picker-item-name';
+    nameEl.textContent = preset.name;
+    const metaEl = document.createElement('div');
+    metaEl.className = 'preset-picker-item-meta';
+    metaEl.textContent = `${preset.protocol === 'openai' ? 'OpenAI 兼容' : 'Anthropic'} · ${preset.defaultModel}`;
+    btn.appendChild(nameEl);
+    btn.appendChild(metaEl);
+    btn.addEventListener('click', async () => {
+      presetPickerModalEl.hidden = true;
+      await actuallyCreateConversationWithPreset(preset.id);
+    });
+    presetPickerListEl.appendChild(btn);
+  }
+}
+
+newConvBtnEl.addEventListener('click', () => {
+  renderPresetPickerList();
+  presetPickerModalEl.hidden = false;
+});
+presetPickerCancelEl.addEventListener('click', () => { presetPickerModalEl.hidden = true; });
+presetPickerModalEl.addEventListener('click', (e) => {
+  if (e.target === presetPickerModalEl) presetPickerModalEl.hidden = true;
+});
+presetPickerManageBtnEl.addEventListener('click', () => {
+  presetPickerModalEl.hidden = true;
+  settingsBtnEl.click();
 });
 
 /* ---------- Export / Import ---------- */
@@ -2648,17 +2817,6 @@ function setSendingState(isSending) {
   convListEl.classList.toggle('disabled', isSending);
 }
 
-/* ---------- API key / model ---------- */
-apiKeyEl.value = localStorage.getItem('meiting-chat-api-key') || '';
-apiKeyEl.addEventListener('input', () => {
-  localStorage.setItem('meiting-chat-api-key', apiKeyEl.value);
-});
-
-// 初始值在 boot() 里从 IndexedDB 读（异步），这里只挂修改时的持久化
-modelSelectEl.addEventListener('change', async () => {
-  await setSelectedModel(modelSelectEl.value);
-});
-
 function getSystemPrompt() {
   const stored = localStorage.getItem('meiting-chat-system-prompt');
   return stored !== null ? stored : DEFAULT_SYSTEM_PROMPT;
@@ -2844,6 +3002,116 @@ function applyColors(ai, user) {
 loadSavedColors();
 applyTheme(currentTheme);
 
+/* ---------- API 预设管理 ---------- */
+function renderPresetList() {
+  presetListEl.innerHTML = '';
+  if (!presets.length) {
+    presetListEl.innerHTML = '<div class="preset-list-empty">还没有创建任何预设</div>';
+    return;
+  }
+  for (const preset of presets) {
+    const item = document.createElement('div');
+    item.className = 'preset-item';
+    const info = document.createElement('div');
+    info.className = 'preset-item-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'preset-item-name';
+    nameEl.textContent = preset.name;
+    const metaEl = document.createElement('div');
+    metaEl.className = 'preset-item-meta';
+    metaEl.textContent = `${preset.protocol === 'openai' ? 'OpenAI 兼容' : 'Anthropic'} · ${preset.defaultModel} · ${preset.endpoint}`;
+    info.appendChild(nameEl);
+    info.appendChild(metaEl);
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', () => openPresetEditModal(preset.id));
+    item.appendChild(info);
+    item.appendChild(editBtn);
+    presetListEl.appendChild(item);
+  }
+}
+
+let presetEditingId = null;
+function openPresetEditModal(presetId) {
+  presetEditingId = presetId || null;
+  const preset = presetId ? getPresetById(presetId) : null;
+  presetEditTitleEl.textContent = preset ? '编辑 API 预设' : '新建 API 预设';
+  presetNameInputEl.value = preset ? preset.name : '';
+  presetProtocolSelectEl.value = preset ? preset.protocol : 'anthropic';
+  presetEndpointInputEl.value = preset ? preset.endpoint : '';
+  presetApiKeyInputEl.value = preset ? preset.apiKey : '';
+  presetModelInputEl.value = preset ? preset.defaultModel : '';
+  presetMemoryToggleInputEl.checked = preset ? !!preset.memoryConnected : true;
+  presetDeleteBtnEl.hidden = !preset;
+  presetEditModalEl.hidden = false;
+  presetNameInputEl.focus();
+}
+function closePresetEditModal() {
+  presetEditModalEl.hidden = true;
+  presetEditingId = null;
+}
+presetAddBtnEl.addEventListener('click', () => openPresetEditModal(null));
+presetEditCancelEl.addEventListener('click', closePresetEditModal);
+presetEditModalEl.addEventListener('click', (e) => {
+  if (e.target === presetEditModalEl) closePresetEditModal();
+});
+
+presetEditSaveEl.addEventListener('click', async () => {
+  const name = presetNameInputEl.value.trim();
+  const endpoint = presetEndpointInputEl.value.trim();
+  const defaultModel = presetModelInputEl.value.trim();
+  if (!name || !endpoint || !defaultModel) {
+    alert('名称、endpoint、默认模型都不能为空');
+    return;
+  }
+  const preset = {
+    id: presetEditingId || genId(),
+    name, endpoint,
+    apiKey: presetApiKeyInputEl.value.trim(),
+    defaultModel,
+    protocol: presetProtocolSelectEl.value,
+    memoryConnected: presetMemoryToggleInputEl.checked
+  };
+  await idbPutPreset(preset);
+  const idx = presets.findIndex(p => p.id === preset.id);
+  if (idx === -1) presets.push(preset); else presets[idx] = preset;
+  renderPresetList();
+  populateConvPresetSelect();
+  renderCurrentPresetBadge();
+  closePresetEditModal();
+});
+
+presetDeleteBtnEl.addEventListener('click', async () => {
+  if (!presetEditingId) return;
+  if (!confirm('确定要删除这个预设吗？正在使用它的对话会显示"未绑定预设"，需要重新选一个。')) return;
+  await idbDeletePreset(presetEditingId);
+  presets = presets.filter(p => p.id !== presetEditingId);
+  renderPresetList();
+  populateConvPresetSelect();
+  renderCurrentPresetBadge();
+  closePresetEditModal();
+});
+
+function populateConvPresetSelect() {
+  const conv = getCurrentConversation();
+  convPresetSelectEl.innerHTML = '';
+  if (!presets.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '（还没有预设）';
+    convPresetSelectEl.appendChild(opt);
+    return;
+  }
+  for (const preset of presets) {
+    const opt = document.createElement('option');
+    opt.value = preset.id;
+    opt.textContent = preset.name;
+    convPresetSelectEl.appendChild(opt);
+  }
+  convPresetSelectEl.value = (conv && conv.presetId) || presets[0].id;
+}
+
 /* ---------- Settings modal ---------- */
 let profileDraft = { user: null, ai: null };
 
@@ -2857,9 +3125,8 @@ settingsBtnEl.addEventListener('click', async () => {
   systemPromptInputEl.value = getSystemPrompt();
   const conv = getCurrentConversation();
   convSystemPromptInputEl.value = conv && conv.systemPrompt != null ? conv.systemPrompt : getSystemPrompt();
-  deepseekApiKeyInputEl.value = await getDeepseekApiKey();
-  claudeMemoryToggleInputEl.checked = await getClaudeMemoryConnected();
-  deepseekMemoryToggleInputEl.checked = await getDeepseekMemoryConnected();
+  populateConvPresetSelect();
+  renderPresetList();
   contextTrimToggleInputEl.checked = await getContextTrimEnabled();
   contextTrimKeepCountInputEl.value = await getContextTrimKeepCount();
   aiColorInputEl.value = savedColors.ai;
@@ -2936,11 +3203,10 @@ settingsSaveEl.addEventListener('click', async () => {
   const conv = getCurrentConversation();
   if (conv) {
     conv.systemPrompt = convSystemPromptInputEl.value;
+    if (convPresetSelectEl.value) conv.presetId = convPresetSelectEl.value;
     await saveConversations();
+    renderCurrentPresetBadge();
   }
-  await setDeepseekApiKey(deepseekApiKeyInputEl.value.trim());
-  await setClaudeMemoryConnected(claudeMemoryToggleInputEl.checked);
-  await setDeepseekMemoryConnected(deepseekMemoryToggleInputEl.checked);
   await setContextTrimEnabled(contextTrimToggleInputEl.checked);
   {
     const keepCountVal = parseInt(contextTrimKeepCountInputEl.value, 10);
@@ -3600,8 +3866,9 @@ async function buildApiMessages(sourceMessages) {
 async function buildSystemPromptText() {
   const enabled = await getContextTrimEnabled();
   const conv = getCurrentConversation();
+  const preset = getCurrentPreset();
   const parts = [getConvSystemPrompt()];
-  if (await isMemoryConnectedForCurrentProvider()) {
+  if (preset && preset.memoryConnected) {
     parts.push(getMemoryContext());
   }
   if (enabled && conv && conv.historySummary) {
@@ -3611,12 +3878,12 @@ async function buildSystemPromptText() {
   return parts.filter(Boolean).join('\n\n');
 }
 
-async function callClaudePlain(model, apiKey, userText) {
-  const res = await fetch(CLAUDE_API_ENDPOINT, {
+async function callAnthropicPlain(preset, userText) {
+  const res = await fetch(preset.endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': preset.apiKey, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model,
+      model: preset.defaultModel,
       max_tokens: SUMMARY_MAX_TOKENS,
       stream: false,
       messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }]
@@ -3628,12 +3895,12 @@ async function callClaudePlain(model, apiKey, userText) {
   return (block && block.text) || '';
 }
 
-async function callDeepseekPlain(model, apiKey, userText) {
-  const res = await fetch(DEEPSEEK_API_ENDPOINT, {
+async function callOpenAiPlain(preset, userText) {
+  const res = await fetch(preset.endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${preset.apiKey}` },
     body: JSON.stringify({
-      model,
+      model: preset.defaultModel,
       stream: false,
       max_tokens: SUMMARY_MAX_TOKENS,
       messages: [{ role: 'user', content: userText }]
@@ -3644,13 +3911,11 @@ async function callDeepseekPlain(model, apiKey, userText) {
   return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
 }
 
-/* 用当前选中的模型/provider 做一次非流式调用来生成或更新摘要；没配对应的 key
+/* 用这条对话绑定的预设做一次非流式调用来生成或更新摘要；没配 key、没绑预设、
    或请求失败都不让发送流程中断——原样退回旧摘要，这一段历史下次再重试摘要。 */
 async function generateSummary(previousSummary, msgsToSummarize) {
-  const model = modelSelectEl.value;
-  const provider = getProvider(model);
-  const apiKey = provider === 'deepseek' ? await getDeepseekApiKey() : apiKeyEl.value.trim();
-  if (!apiKey) return { ok: false, summary: previousSummary };
+  const preset = getCurrentPreset();
+  if (!preset || !preset.apiKey) return { ok: false, summary: previousSummary };
 
   const transcript = msgsToSummarize.map(m => {
     const who = m.role === 'user' ? '用户' : 'AI';
@@ -3662,9 +3927,9 @@ async function generateSummary(previousSummary, msgsToSummarize) {
     : `请把下面这段对话总结成一段摘要（保留关键事实和上下文，不超过 300 字，不要编造没提到的内容）：\n\n${transcript}`;
 
   try {
-    const summary = provider === 'deepseek'
-      ? await callDeepseekPlain(model, apiKey, instruction)
-      : await callClaudePlain(model, apiKey, instruction);
+    const summary = preset.protocol === 'openai'
+      ? await callOpenAiPlain(preset, instruction)
+      : await callAnthropicPlain(preset, instruction);
     return { ok: true, summary: summary || previousSummary };
   } catch (e) {
     console.warn('生成历史摘要失败：', e.message);
@@ -3715,23 +3980,23 @@ async function readHttpErrorMessage(res) {
   }
 }
 
-async function sendToClaude(model, apiKey, assistantMsg) {
+async function sendToAnthropicProtocol(preset, assistantMsg) {
   const sourceMessages = await getMessagesToSend();
   const apiMessages = await buildApiMessages(sourceMessages);
   await saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片，以及新生成的摘要
 
-  const res = await fetch(CLAUDE_API_ENDPOINT, {
+  const res = await fetch(preset.endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
+      'x-api-key': preset.apiKey,
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model,
+      model: preset.defaultModel,
       max_tokens: MAX_TOKENS,
       system: await buildSystemPromptText(),
-      thinking: THINKING_CONFIG_BY_MODEL[model] || { type: 'adaptive' },
+      thinking: THINKING_CONFIG_BY_MODEL[preset.defaultModel] || { type: 'adaptive' },
       stream: true,
       messages: apiMessages
     })
@@ -3765,7 +4030,11 @@ async function sendToClaude(model, apiKey, assistantMsg) {
    不是 Anthropic 那种独立的顶层字段；图片消息只带文字部分——deepseek-chat/
    deepseek-reasoner 都不支持图文输入，sendMessage() 里已经提前挡掉带图片
    发送的情况，这里再兜底一次单纯不把图片塞进去，不会报错也不会丢文字。 */
-async function buildDeepseekMessages(sourceMessages) {
+/* 通用 OpenAI 兼容协议：system prompt 是消息数组里第一条 role:'system'，不是
+   Anthropic 那种独立的顶层字段；图片消息只带文字部分——sendMessage() 里已经
+   提前挡掉带图片发送的情况（OpenAI 协议预设一律当纯文本处理），这里再兜底一次
+   单纯不把图片塞进去，不会报错也不会丢文字。 */
+async function buildOpenAiMessages(sourceMessages) {
   const sysPrompt = await buildSystemPromptText();
   const out = [];
   if (sysPrompt) out.push({ role: 'system', content: sysPrompt });
@@ -3776,7 +4045,9 @@ async function buildDeepseekMessages(sourceMessages) {
   return out;
 }
 
-function applyDeepseekStreamEvent(data, msg) {
+/* reasoning_content 是 DeepSeek 带起来的、现在不少 OpenAI 兼容的推理模型都跟进
+   的约定，映射进跟 Claude "thinking" 一样的展示区；不是 DeepSeek 专属处理。 */
+function applyOpenAiStreamEvent(data, msg) {
   const delta = data.choices && data.choices[0] && data.choices[0].delta;
   if (delta) {
     if (delta.reasoning_content) msg.thinking = (msg.thinking || '') + delta.reasoning_content;
@@ -3789,20 +4060,20 @@ function applyDeepseekStreamEvent(data, msg) {
   }
 }
 
-async function sendToDeepseek(model, apiKey, assistantMsg) {
+async function sendToOpenAiProtocol(preset, assistantMsg) {
   const sourceMessages = await getMessagesToSend();
-  const dsMessages = await buildDeepseekMessages(sourceMessages);
+  const oaMessages = await buildOpenAiMessages(sourceMessages);
   await saveMessages();      // 落盘可能新生成的摘要
 
-  const res = await fetch(DEEPSEEK_API_ENDPOINT, {
+  const res = await fetch(preset.endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'Authorization': `Bearer ${preset.apiKey}`
     },
     body: JSON.stringify({
-      model,
-      messages: dsMessages,
+      model: preset.defaultModel,
+      messages: oaMessages,
       stream: true,
       max_tokens: MAX_TOKENS
     })
@@ -3827,7 +4098,7 @@ async function sendToDeepseek(model, apiKey, assistantMsg) {
       if (!dataStr || dataStr === '[DONE]') continue;
       let data;
       try { data = JSON.parse(dataStr); } catch (e) { continue; }
-      applyDeepseekStreamEvent(data, assistantMsg);
+      applyOpenAiStreamEvent(data, assistantMsg);
     }
   }
 }
@@ -3836,17 +4107,17 @@ async function sendMessage() {
   const text = textInputEl.value.trim();
   if (!text && pendingImages.length === 0) return;
 
-  const model = modelSelectEl.value;
-  const provider = getProvider(model);
-
-  if (provider === 'deepseek' && pendingImages.length > 0) {
-    alert('DeepSeek 模型不支持图片，请先移除待发送的图片，或切换回 Claude 模型。');
+  const preset = getCurrentPreset();
+  if (!preset) {
+    alert('这条对话还没绑定 API 预设，请先点顶部的预设标签或打开设置选一个。');
     return;
   }
-
-  const apiKey = provider === 'deepseek' ? await getDeepseekApiKey() : apiKeyEl.value.trim();
-  if (!apiKey) {
-    alert(provider === 'deepseek' ? '请先在设置里填入 DeepSeek API Key' : '请先在顶部填入 API Key');
+  if (preset.protocol === 'openai' && pendingImages.length > 0) {
+    alert(`预设"${preset.name}"走的是 OpenAI 兼容协议，不支持图片，请先移除待发送的图片，或切换到 Anthropic 协议的预设。`);
+    return;
+  }
+  if (!preset.apiKey) {
+    alert(`预设"${preset.name}"还没填 API Key，请先在设置里补上。`);
     return;
   }
 
@@ -3869,10 +4140,10 @@ async function sendMessage() {
   scrollToBottom();
 
   try {
-    if (provider === 'deepseek') {
-      await sendToDeepseek(model, apiKey, assistantMsg);
+    if (preset.protocol === 'openai') {
+      await sendToOpenAiProtocol(preset, assistantMsg);
     } else {
-      await sendToClaude(model, apiKey, assistantMsg);
+      await sendToAnthropicProtocol(preset, assistantMsg);
     }
     assistantMsg.streaming = false;
     assistantMsg.timestamp = Date.now();
@@ -3924,12 +4195,24 @@ function applyStreamEvent(data, msg) {
 
 /* ---------- Boot ---------- */
 async function boot() {
-  modelSelectEl.value = await getSelectedModel();
+  presets = await loadPresets();
   conversations = await loadConversations();
+  // 老对话（这个功能上线前建的）没有 presetId，统一绑到第一个预设，避免
+  // 打开就显示"未绑定预设"发不出消息——用户随时可以在设置里再手动改绑。
+  let migratedAnyConv = false;
+  if (presets.length) {
+    for (const conv of conversations) {
+      if (!conv.presetId) {
+        conv.presetId = presets[0].id;
+        migratedAnyConv = true;
+      }
+    }
+    if (migratedAnyConv) await saveConversations();
+  }
   diaries = await loadDiaries();
   currentId = await idbGetMeta('currentId');
   if (!conversations.length) {
-    await createConversation();
+    await createConversation(presets[0] && presets[0].id);
   } else if (!currentId || !conversations.some(c => c.id === currentId)) {
     currentId = conversations[0].id;
     await idbSetMeta('currentId', currentId);
@@ -3937,6 +4220,7 @@ async function boot() {
   messages = getCurrentConversation().messages;
   renderSidebar();
   renderAll();
+  renderCurrentPresetBadge();
   renderTogetherDaysBar();
   checkAnniversaryReminders();
 }
