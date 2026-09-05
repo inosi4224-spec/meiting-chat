@@ -637,6 +637,16 @@
     margin-bottom: 6px;
   }
   .settings-text-input:focus { border-color: var(--accent); }
+  .context-trim-count-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px; font-size: 13px; color: var(--text);
+  }
+  .context-trim-count-row input[type="number"] {
+    width: 80px; padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--border-soft); background: var(--surface);
+    color: var(--text); font-size: 13px; outline: none;
+  }
+  .context-trim-count-row input[type="number"]:focus { border-color: var(--accent); }
   .color-row {
     display: flex;
     align-items: center;
@@ -836,11 +846,17 @@
     background: rgba(0,0,0,0.55); color: #fff;
     font-size: 9.5px; padding: 2px 4px; text-align: center;
   }
-  .file-thumb-jump {
+  .file-thumb-actions {
     position: absolute; top: 3px; right: 3px;
-    background: rgba(0,0,0,0.5); color: #fff; border: none;
-    border-radius: 6px; font-size: 10px; padding: 2px 6px; cursor: pointer;
+    display: flex; gap: 3px;
   }
+  .file-thumb-action {
+    background: rgba(0,0,0,0.55); color: #fff; border: none;
+    border-radius: 6px; font-size: 11px; padding: 2px 5px; cursor: pointer;
+    line-height: 1.4;
+  }
+  .file-thumb-action:hover { background: rgba(0,0,0,0.78); }
+  .file-thumb-action-danger:hover { background: #c0574f; }
   .file-preview-card { position: relative; max-width: 90vw; max-height: 90vh; }
   .file-preview-card img { max-width: 90vw; max-height: 90vh; border-radius: 10px; display: block; }
   #file-preview-close {
@@ -1147,6 +1163,19 @@
           <span class="toggle-hint">模型选到 DeepSeek Chat / DeepSeek Reasoner 时会改用这个 Key，走 DeepSeek 官方接口（OpenAI 协议），不再用七牛云</span>
         </div>
         <div class="settings-section">
+          <label class="settings-label">上下文裁剪</label>
+          <label class="toggle-row">
+            <input type="checkbox" id="context-trim-toggle-input">
+            <span>只把最近若干条消息发给模型，更早的自动生成摘要拼进 system prompt
+              <span class="toggle-hint">默认关闭：关闭时发送完整历史，不做任何裁剪；开启会额外消耗一次调用来生成/更新摘要</span>
+            </span>
+          </label>
+          <div class="context-trim-count-row">
+            <span>保留条数</span>
+            <input type="number" id="context-trim-keep-count-input" min="2" max="500" step="1">
+          </div>
+        </div>
+        <div class="settings-section">
           <label class="settings-label">气泡颜色</label>
           <div class="color-row">
             <div class="color-field">
@@ -1400,6 +1429,8 @@ const SPLIT_DELAY_MIN_MS = 800;
 const SPLIT_DELAY_RANGE_MS = 700;
 const IMAGE_MAX_WIDTH = 1024;
 const DEFAULT_IMAGE_QUALITY = 0.8;
+const DEFAULT_CONTEXT_TRIM_KEEP_COUNT = 30;
+const SUMMARY_MAX_TOKENS = 1024;
 const DEFAULT_PROFILES = {
   user: { avatar: null, nickname: '美婷', bio: '', background: null },
   ai: { avatar: null, nickname: 'cc', bio: '', background: null }
@@ -1485,6 +1516,8 @@ const settingsModalEl = document.getElementById('settings-modal');
 const systemPromptInputEl = document.getElementById('system-prompt-input');
 const convSystemPromptInputEl = document.getElementById('conv-system-prompt-input');
 const deepseekApiKeyInputEl = document.getElementById('deepseek-api-key-input');
+const contextTrimToggleInputEl = document.getElementById('context-trim-toggle-input');
+const contextTrimKeepCountInputEl = document.getElementById('context-trim-keep-count-input');
 const settingsSaveEl = document.getElementById('settings-save');
 const settingsCancelEl = document.getElementById('settings-cancel');
 const aiColorInputEl = document.getElementById('ai-color-input');
@@ -1649,6 +1682,20 @@ async function setSelectedModel(model) {
   await idbSetMeta('selectedModel', model);
 }
 
+async function getContextTrimEnabled() {
+  return !!(await idbGetMeta('contextTrimEnabled'));
+}
+async function setContextTrimEnabled(v) {
+  await idbSetMeta('contextTrimEnabled', !!v);
+}
+async function getContextTrimKeepCount() {
+  const stored = await idbGetMeta('contextTrimKeepCount');
+  return Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_CONTEXT_TRIM_KEEP_COUNT;
+}
+async function setContextTrimKeepCount(n) {
+  await idbSetMeta('contextTrimKeepCount', n);
+}
+
 /* ---------- Conversation state ---------- */
 let conversations = [];
 let currentId = null;
@@ -1721,7 +1768,8 @@ function getCurrentConversation() {
 async function createConversation() {
   const conv = {
     id: genId(), title: '新对话', messages: [], updatedAt: Date.now(), memoryContext: '',
-    systemPrompt: getSystemPrompt()   // 继承当时的全局默认，之后这条对话自己独立修改
+    systemPrompt: getSystemPrompt(),   // 继承当时的全局默认，之后这条对话自己独立修改
+    historySummary: '', summarizedUpTo: 0   // 上下文裁剪用：还没摘要过任何历史
   };
   conversations.unshift(conv);
   currentId = conv.id;
@@ -2173,16 +2221,44 @@ function renderFilesGrid() {
     dateEl.textContent = formatTimestamp(f.timestamp);
     thumb.appendChild(dateEl);
 
+    const actions = document.createElement('div');
+    actions.className = 'file-thumb-actions';
+
     const jumpBtn = document.createElement('button');
     jumpBtn.type = 'button';
-    jumpBtn.className = 'file-thumb-jump';
-    jumpBtn.textContent = '跳转';
+    jumpBtn.className = 'file-thumb-action';
+    jumpBtn.textContent = '↗';
     jumpBtn.title = '跳转到原消息';
     jumpBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       jumpToMessage(f.msgIndex);
     });
-    thumb.appendChild(jumpBtn);
+    actions.appendChild(jumpBtn);
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.type = 'button';
+    downloadBtn.className = 'file-thumb-action';
+    downloadBtn.textContent = '⬇';
+    downloadBtn.title = '下载';
+    downloadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadFileItem(f);
+    });
+    actions.appendChild(downloadBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'file-thumb-action file-thumb-action-danger';
+    deleteBtn.textContent = '🗑';
+    deleteBtn.title = '删除';
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('确定要删除这个文件吗？此操作无法撤销。')) return;
+      await deleteFileItem(f);
+    });
+    actions.appendChild(deleteBtn);
+
+    thumb.appendChild(actions);
 
     thumb.addEventListener('click', () => openFilePreview(f));
     filesGridEl.appendChild(thumb);
@@ -2205,6 +2281,35 @@ function jumpToMessage(msgIndex) {
   row.scrollIntoView({ behavior: 'smooth', block: 'center' });
   row.classList.add('msg-highlight');
   setTimeout(() => row.classList.remove('msg-highlight'), 1500);
+}
+
+/* base64 -> Blob 直接触发浏览器下载，不经过 data: URL（部分浏览器对超长
+   data: URL 的 <a download> 支持不稳定，Blob + objectURL 更可靠）。 */
+function downloadFileItem(f) {
+  const byteChars = atob(f.data);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: f.media_type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = f.name || 'file';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* f.msgIndex/f.imgIndex 是 collectConversationFiles() 在渲染这个网格时按当前
+   messages 数组现算的，删除后立刻重新渲染整个网格（renderFilesGrid），
+   后续点击拿到的都是刷新过的下标，不会因为这次删除导致其它按钮下标错位。 */
+async function deleteFileItem(f) {
+  const m = messages[f.msgIndex];
+  if (!m || !m.images) return;
+  m.images.splice(f.imgIndex, 1);
+  await saveMessages();
+  renderAll();
+  renderFilesGrid();
 }
 
 filesBtnEl.addEventListener('click', () => {
@@ -2708,6 +2813,8 @@ settingsBtnEl.addEventListener('click', async () => {
   const conv = getCurrentConversation();
   convSystemPromptInputEl.value = conv && conv.systemPrompt != null ? conv.systemPrompt : getSystemPrompt();
   deepseekApiKeyInputEl.value = await getDeepseekApiKey();
+  contextTrimToggleInputEl.checked = await getContextTrimEnabled();
+  contextTrimKeepCountInputEl.value = await getContextTrimKeepCount();
   aiColorInputEl.value = savedColors.ai;
   userColorInputEl.value = savedColors.user;
   applyColors(savedColors.ai, savedColors.user);
@@ -2785,6 +2892,11 @@ settingsSaveEl.addEventListener('click', async () => {
     await saveConversations();
   }
   await setDeepseekApiKey(deepseekApiKeyInputEl.value.trim());
+  await setContextTrimEnabled(contextTrimToggleInputEl.checked);
+  {
+    const keepCountVal = parseInt(contextTrimKeepCountInputEl.value, 10);
+    await setContextTrimKeepCount(Number.isFinite(keepCountVal) && keepCountVal > 0 ? keepCountVal : DEFAULT_CONTEXT_TRIM_KEEP_COUNT);
+  }
   savedColors.ai = aiColorInputEl.value;
   savedColors.user = userColorInputEl.value;
   localStorage.setItem('meiting-chat-color-ai', savedColors.ai);
@@ -3411,9 +3523,9 @@ function normalizeImageForApi(img) {
   });
 }
 
-async function buildApiMessages() {
+async function buildApiMessages(sourceMessages) {
   const out = [];
-  for (const m of messages) {
+  for (const m of sourceMessages) {
     if (m.streaming) continue;
     const blocks = [];
     if (m.images) {
@@ -3428,6 +3540,111 @@ async function buildApiMessages() {
     out.push({ role: m.role, content: blocks });
   }
   return out;
+}
+
+/* ---------- Context trimming + auto-summary ----------
+   关闭（默认）：发完整历史，system prompt 就是 [独立prompt, 记忆库摘要, 当前时间]。
+   开启：只把最近 keepCount 条发给模型，更早、还没被摘要覆盖到的那一段先调一次
+   模型把它们浓缩进 conv.historySummary（跟旧摘要融合，不是从零重写），再把
+   system prompt 拼成 [独立prompt, 记忆库摘要, 历史摘要, 当前时间]。summarizedUpTo
+   记录已经摘要到 messages 数组的第几条，避免同一段历史被反复摘要。 */
+async function buildSystemPromptText() {
+  const enabled = await getContextTrimEnabled();
+  const conv = getCurrentConversation();
+  const parts = [getConvSystemPrompt(), getMemoryContext()];
+  if (enabled && conv && conv.historySummary) {
+    parts.push(`【历史摘要】\n${conv.historySummary}`);
+  }
+  parts.push(formatCurrentTimeForPrompt());
+  return parts.filter(Boolean).join('\n\n');
+}
+
+async function callClaudePlain(model, apiKey, userText) {
+  const res = await fetch(CLAUDE_API_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model,
+      max_tokens: SUMMARY_MAX_TOKENS,
+      stream: false,
+      messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }]
+    })
+  });
+  if (!res.ok) throw new ApiHttpError(await readHttpErrorMessage(res));
+  const data = await res.json();
+  const block = data.content && data.content.find(b => b.type === 'text');
+  return (block && block.text) || '';
+}
+
+async function callDeepseekPlain(model, apiKey, userText) {
+  const res = await fetch(DEEPSEEK_API_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      max_tokens: SUMMARY_MAX_TOKENS,
+      messages: [{ role: 'user', content: userText }]
+    })
+  });
+  if (!res.ok) throw new ApiHttpError(await readHttpErrorMessage(res));
+  const data = await res.json();
+  return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+}
+
+/* 用当前选中的模型/provider 做一次非流式调用来生成或更新摘要；没配对应的 key
+   或请求失败都不让发送流程中断——原样退回旧摘要，这一段历史下次再重试摘要。 */
+async function generateSummary(previousSummary, msgsToSummarize) {
+  const model = modelSelectEl.value;
+  const provider = getProvider(model);
+  const apiKey = provider === 'deepseek' ? await getDeepseekApiKey() : apiKeyEl.value.trim();
+  if (!apiKey) return { ok: false, summary: previousSummary };
+
+  const transcript = msgsToSummarize.map(m => {
+    const who = m.role === 'user' ? '用户' : 'AI';
+    const body = m.text || (m.images && m.images.length ? '[图片]' : '');
+    return `${who}：${body}`;
+  }).join('\n');
+  const instruction = previousSummary
+    ? `已有的历史摘要：\n${previousSummary}\n\n请把下面新增的对话内容也融合进这段摘要，输出更新后的完整摘要（保留关键事实和上下文，不超过 300 字，不要编造没提到的内容）：\n\n${transcript}`
+    : `请把下面这段对话总结成一段摘要（保留关键事实和上下文，不超过 300 字，不要编造没提到的内容）：\n\n${transcript}`;
+
+  try {
+    const summary = provider === 'deepseek'
+      ? await callDeepseekPlain(model, apiKey, instruction)
+      : await callClaudePlain(model, apiKey, instruction);
+    return { ok: true, summary: summary || previousSummary };
+  } catch (e) {
+    console.warn('生成历史摘要失败：', e.message);
+    return { ok: false, summary: previousSummary };
+  }
+}
+
+async function maybeSummarizeOldMessages(keepCount) {
+  const conv = getCurrentConversation();
+  const summarizedUpTo = conv.summarizedUpTo || 0;
+  const overflowEnd = messages.length - keepCount;
+  if (overflowEnd <= summarizedUpTo) return;
+  const toSummarize = messages.slice(summarizedUpTo, overflowEnd).filter(m => !m.streaming);
+  if (!toSummarize.length) {
+    conv.summarizedUpTo = overflowEnd;
+    return;
+  }
+  const result = await generateSummary(conv.historySummary || '', toSummarize);
+  if (result.ok) {
+    conv.historySummary = result.summary;
+    conv.summarizedUpTo = overflowEnd;
+    await saveMessages();
+  }
+  // 摘要失败：summarizedUpTo 原地不动，下次发送再重试，这次照常用裁剪前的状态发送
+}
+
+async function getMessagesToSend() {
+  const enabled = await getContextTrimEnabled();
+  if (!enabled) return messages;
+  const keepCount = await getContextTrimKeepCount();
+  await maybeSummarizeOldMessages(keepCount);
+  return messages.slice(-keepCount);
 }
 
 /* ---------- Streaming send ---------- */
@@ -3447,8 +3664,9 @@ async function readHttpErrorMessage(res) {
 }
 
 async function sendToClaude(model, apiKey, assistantMsg) {
-  const apiMessages = await buildApiMessages();
-  await saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片
+  const sourceMessages = await getMessagesToSend();
+  const apiMessages = await buildApiMessages(sourceMessages);
+  await saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片，以及新生成的摘要
 
   const res = await fetch(CLAUDE_API_ENDPOINT, {
     method: 'POST',
@@ -3460,7 +3678,7 @@ async function sendToClaude(model, apiKey, assistantMsg) {
     body: JSON.stringify({
       model,
       max_tokens: MAX_TOKENS,
-      system: [getConvSystemPrompt(), getMemoryContext(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n'),
+      system: await buildSystemPromptText(),
       thinking: THINKING_CONFIG_BY_MODEL[model] || { type: 'adaptive' },
       stream: true,
       messages: apiMessages
@@ -3495,11 +3713,11 @@ async function sendToClaude(model, apiKey, assistantMsg) {
    不是 Anthropic 那种独立的顶层字段；图片消息只带文字部分——deepseek-chat/
    deepseek-reasoner 都不支持图文输入，sendMessage() 里已经提前挡掉带图片
    发送的情况，这里再兜底一次单纯不把图片塞进去，不会报错也不会丢文字。 */
-function buildDeepseekMessages() {
-  const sysPrompt = [getConvSystemPrompt(), getMemoryContext(), formatCurrentTimeForPrompt()].filter(Boolean).join('\n\n');
+async function buildDeepseekMessages(sourceMessages) {
+  const sysPrompt = await buildSystemPromptText();
   const out = [];
   if (sysPrompt) out.push({ role: 'system', content: sysPrompt });
-  for (const m of messages) {
+  for (const m of sourceMessages) {
     if (m.streaming || !m.text) continue;
     out.push({ role: m.role, content: m.text });
   }
@@ -3520,6 +3738,10 @@ function applyDeepseekStreamEvent(data, msg) {
 }
 
 async function sendToDeepseek(model, apiKey, assistantMsg) {
+  const sourceMessages = await getMessagesToSend();
+  const dsMessages = await buildDeepseekMessages(sourceMessages);
+  await saveMessages();      // 落盘可能新生成的摘要
+
   const res = await fetch(DEEPSEEK_API_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -3528,7 +3750,7 @@ async function sendToDeepseek(model, apiKey, assistantMsg) {
     },
     body: JSON.stringify({
       model,
-      messages: buildDeepseekMessages(),
+      messages: dsMessages,
       stream: true,
       max_tokens: MAX_TOKENS
     })
