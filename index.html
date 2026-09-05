@@ -1161,11 +1161,7 @@
   <div id="sidebar">
     <div id="sidebar-header">
       <button id="new-conv-btn">＋ 新建对话</button>
-      <div id="export-import-row">
-        <button type="button" id="export-conv-btn">导出对话</button>
-        <button type="button" id="import-conv-btn">导入对话</button>
-        <input type="file" id="import-conv-input" accept="application/json,.json" style="display:none">
-      </div>
+      <input type="file" id="import-conv-input" accept="application/json,.json" style="display:none">
     </div>
     <nav id="nav-menu">
       <button type="button" class="nav-item active" data-nav="chat"><span class="nav-icon">💬</span><span class="nav-label">聊天</span></button>
@@ -1175,7 +1171,7 @@
       <button type="button" class="nav-item" data-nav="album"><span class="nav-icon">🖼️</span><span class="nav-label">相册</span></button>
       <button type="button" class="nav-item" data-nav="period"><span class="nav-icon">🩸</span><span class="nav-label">经期</span></button>
       <button type="button" class="nav-item" data-nav="milestone"><span class="nav-icon">🚩</span><span class="nav-label">里程碑</span></button>
-      <button type="button" class="nav-item" data-nav="settings"><span class="nav-icon">⚙️</span><span class="nav-label">设置</span></button>
+      <button type="button" class="nav-item" data-nav="settings"><span class="nav-icon">⚙️</span><span class="nav-label">全局设置</span></button>
     </nav>
     <div id="conv-list"></div>
   </div>
@@ -1188,7 +1184,7 @@
       <button type="button" class="secondary" id="current-preset-badge" title="当前对话使用的 API 预设"></button>
       <button class="secondary" id="theme-toggle-btn" title="切换深色模式">🌙</button>
       <button class="secondary" id="files-btn">文件</button>
-      <button class="secondary" id="settings-btn">设置</button>
+      <button class="secondary" id="conv-settings-btn">对话设置</button>
       <button class="secondary" id="clear-btn">清空当前对话</button>
     </header>
 
@@ -1197,28 +1193,20 @@
 
     <div id="chat"></div>
 
-    <div class="modal-overlay" id="settings-modal" hidden>
+    <!-- 对话设置：只放跟"当前打开的这一条对话"相关的东西 -->
+    <div class="modal-overlay" id="conv-settings-modal" hidden>
       <div class="modal-card">
-        <h2>设置</h2>
+        <h2>对话设置</h2>
         <div class="settings-section">
-          <label class="settings-label">系统提示词 (System Prompt) — 全局默认，新建对话时使用</label>
-          <textarea id="system-prompt-input"></textarea>
-        </div>
-        <div class="settings-section">
-          <label class="settings-label">当前对话使用的 API 预设——只影响这一个对话</label>
+          <label class="settings-label">当前对话使用的 API 预设</label>
           <select class="settings-text-input" id="conv-preset-select"></select>
         </div>
         <div class="settings-section">
-          <label class="settings-label">当前对话的系统提示词——只影响这一个对话，不影响全局默认</label>
+          <label class="settings-label">当前对话的独立 Prompt——只影响这一个对话，不影响全局默认</label>
           <textarea id="conv-system-prompt-input"></textarea>
         </div>
         <div class="settings-section">
-          <label class="settings-label">API 预设管理</label>
-          <div class="preset-list" id="preset-list"></div>
-          <button type="button" class="secondary" id="preset-add-btn">＋ 新建预设</button>
-        </div>
-        <div class="settings-section">
-          <label class="settings-label">上下文裁剪</label>
+          <label class="settings-label">上下文裁剪——只影响这一个对话</label>
           <label class="toggle-row">
             <input type="checkbox" id="context-trim-toggle-input">
             <span>只把最近若干条消息发给模型，更早的自动生成摘要拼进 system prompt
@@ -1231,7 +1219,35 @@
           </div>
         </div>
         <div class="settings-section">
-          <label class="settings-label">气泡颜色</label>
+          <label class="toggle-row">
+            <input type="checkbox" id="conv-memory-toggle-input">
+            <span>连接 Latent 记忆库
+              <span class="toggle-hint">这个开关改的是当前对话绑定的那个 API 预设本身——同一预设下的其他对话也会跟着变</span>
+            </span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" id="conv-settings-cancel">取消</button>
+          <button class="primary" id="conv-settings-save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 全局设置：全 App 通用、跟"当前是哪条对话"无关的东西 -->
+    <div class="modal-overlay" id="global-settings-modal" hidden>
+      <div class="modal-card">
+        <h2>全局设置</h2>
+        <div class="settings-section">
+          <label class="settings-label">全局默认 Prompt——新对话继承用</label>
+          <textarea id="system-prompt-input"></textarea>
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">API 预设管理</label>
+          <div class="preset-list" id="preset-list"></div>
+          <button type="button" class="secondary" id="preset-add-btn">＋ 新建预设</button>
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">外观</label>
           <div class="color-row">
             <div class="color-field">
               <input type="color" id="ai-color-input">
@@ -1243,9 +1259,13 @@
             </div>
             <button type="button" class="secondary" id="reset-colors-btn">恢复默认</button>
           </div>
+          <label class="toggle-row" style="margin-top: 10px;">
+            <input type="checkbox" id="dark-mode-toggle-input">
+            <span>深色模式</span>
+          </label>
         </div>
         <div class="settings-section">
-          <label class="settings-label">个人资料</label>
+          <label class="settings-label">个人资料——双方头像和网名，新对话会继承这份默认</label>
           <div class="profile-edit-row">
             <div class="profile-edit-field">
               <img class="profile-avatar-preview" id="user-avatar-preview" title="点击上传头像">
@@ -1266,25 +1286,29 @@
           </div>
         </div>
         <div class="settings-section">
-          <label class="settings-label">发送图片质量</label>
+          <label class="settings-label">发送</label>
           <div class="quality-row">
             <input type="range" id="image-quality-input" min="0.3" max="1" step="0.05">
             <span id="image-quality-value"></span>
           </div>
           <span class="toggle-hint">发送前会先压缩到最大宽度 1024px；数值越低文件越小、画质越糊</span>
-        </div>
-        <div class="settings-section">
-          <label class="settings-label">分条发送</label>
-          <label class="toggle-row">
+          <label class="toggle-row" style="margin-top: 10px;">
             <input type="checkbox" id="split-toggle-input">
             <span>模拟真人分条打字发送
               <span class="toggle-hint">回复不超过 200 字时按换行拆成多条气泡，逐条延迟显示；超过 200 字或关闭此项时整条发送</span>
             </span>
           </label>
         </div>
+        <div class="settings-section">
+          <label class="settings-label">数据</label>
+          <div id="export-import-row">
+            <button type="button" id="export-conv-btn">导出对话</button>
+            <button type="button" id="import-conv-btn">导入对话</button>
+          </div>
+        </div>
         <div class="modal-actions">
-          <button class="secondary" id="settings-cancel">取消</button>
-          <button class="primary" id="settings-save">保存</button>
+          <button class="secondary" id="global-settings-cancel">取消</button>
+          <button class="primary" id="global-settings-save">保存</button>
         </div>
       </div>
     </div>
@@ -1548,8 +1572,6 @@ const sidebarToggleBtnEl = document.getElementById('sidebar-toggle-btn');
 const sidebarBackdropEl = document.getElementById('sidebar-backdrop');
 const newConvBtnEl = document.getElementById('new-conv-btn');
 const convListEl = document.getElementById('conv-list');
-const exportConvBtnEl = document.getElementById('export-conv-btn');
-const importConvBtnEl = document.getElementById('import-conv-btn');
 const importConvInputEl = document.getElementById('import-conv-input');
 const exportModalEl = document.getElementById('export-modal');
 const exportCancelBtnEl = document.getElementById('export-cancel-btn');
@@ -1616,11 +1638,21 @@ const previewRowEl = document.getElementById('preview-row');
 const clearBtnEl = document.getElementById('clear-btn');
 const totalsBarEl = document.getElementById('totals-bar');
 const themeToggleBtnEl = document.getElementById('theme-toggle-btn');
-const settingsBtnEl = document.getElementById('settings-btn');
-const settingsModalEl = document.getElementById('settings-modal');
-const systemPromptInputEl = document.getElementById('system-prompt-input');
+
+/* ---------- 对话设置 (per-conversation) ---------- */
+const convSettingsBtnEl = document.getElementById('conv-settings-btn');
+const convSettingsModalEl = document.getElementById('conv-settings-modal');
 const convSystemPromptInputEl = document.getElementById('conv-system-prompt-input');
 const convPresetSelectEl = document.getElementById('conv-preset-select');
+const contextTrimToggleInputEl = document.getElementById('context-trim-toggle-input');
+const contextTrimKeepCountInputEl = document.getElementById('context-trim-keep-count-input');
+const convMemoryToggleInputEl = document.getElementById('conv-memory-toggle-input');
+const convSettingsSaveEl = document.getElementById('conv-settings-save');
+const convSettingsCancelEl = document.getElementById('conv-settings-cancel');
+
+/* ---------- 全局设置 (app-wide) ---------- */
+const globalSettingsModalEl = document.getElementById('global-settings-modal');
+const systemPromptInputEl = document.getElementById('system-prompt-input');
 const presetListEl = document.getElementById('preset-list');
 const presetAddBtnEl = document.getElementById('preset-add-btn');
 const presetEditModalEl = document.getElementById('preset-edit-modal');
@@ -1638,10 +1670,11 @@ const presetPickerModalEl = document.getElementById('preset-picker-modal');
 const presetPickerListEl = document.getElementById('preset-picker-list');
 const presetPickerCancelEl = document.getElementById('preset-picker-cancel');
 const presetPickerManageBtnEl = document.getElementById('preset-picker-manage-btn');
-const contextTrimToggleInputEl = document.getElementById('context-trim-toggle-input');
-const contextTrimKeepCountInputEl = document.getElementById('context-trim-keep-count-input');
-const settingsSaveEl = document.getElementById('settings-save');
-const settingsCancelEl = document.getElementById('settings-cancel');
+const darkModeToggleInputEl = document.getElementById('dark-mode-toggle-input');
+const exportConvBtnEl = document.getElementById('export-conv-btn');
+const importConvBtnEl = document.getElementById('import-conv-btn');
+const globalSettingsSaveEl = document.getElementById('global-settings-save');
+const globalSettingsCancelEl = document.getElementById('global-settings-cancel');
 const aiColorInputEl = document.getElementById('ai-color-input');
 const userColorInputEl = document.getElementById('user-color-input');
 const resetColorsBtnEl = document.getElementById('reset-colors-btn');
@@ -1813,18 +1846,27 @@ async function idbDeletePreset(id) {
   });
 }
 
-async function getContextTrimEnabled() {
+/* 上下文裁剪现在是"每个对话独立"的设置，跟 systemPrompt/profiles 同一套模式：
+   新建对话时从下面这两个"全局默认"（还是存 IndexedDB 的 meta 表，只是不再有
+   自己的编辑界面了——上线这个功能之前配过的值仍然当种子用）继承一份到
+   conv.contextTrim，之后单独调整只影响这一条对话。老对话（这个改动上线前
+   建的）没有 conv.contextTrim 字段时，退回这两个全局默认。 */
+async function getGlobalDefaultContextTrimEnabled() {
   return !!(await idbGetMeta('contextTrimEnabled'));
 }
-async function setContextTrimEnabled(v) {
-  await idbSetMeta('contextTrimEnabled', !!v);
-}
-async function getContextTrimKeepCount() {
+async function getGlobalDefaultContextTrimKeepCount() {
   const stored = await idbGetMeta('contextTrimKeepCount');
   return Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_CONTEXT_TRIM_KEEP_COUNT;
 }
-async function setContextTrimKeepCount(n) {
-  await idbSetMeta('contextTrimKeepCount', n);
+async function getConvContextTrimEnabled() {
+  const conv = getCurrentConversation();
+  if (conv && conv.contextTrim) return !!conv.contextTrim.enabled;
+  return getGlobalDefaultContextTrimEnabled();
+}
+async function getConvContextTrimKeepCount() {
+  const conv = getCurrentConversation();
+  if (conv && conv.contextTrim && conv.contextTrim.keepCount) return conv.contextTrim.keepCount;
+  return getGlobalDefaultContextTrimKeepCount();
 }
 
 
@@ -1852,7 +1894,7 @@ function renderCurrentPresetBadge() {
     ? `${preset.name} · ${preset.defaultModel}（点击打开设置切换）`
     : '这条对话还没绑定 API 预设，点击打开设置去选一个';
 }
-currentPresetBadgeEl.addEventListener('click', () => settingsBtnEl.click());
+currentPresetBadgeEl.addEventListener('click', () => convSettingsBtnEl.click());
 
 async function migrateLegacyConfigToPresets() {
   const legacyClaudeKey = localStorage.getItem('meiting-chat-api-key') || '';
@@ -1958,7 +2000,11 @@ async function createConversation(presetId) {
     systemPrompt: getSystemPrompt(),   // 继承当时的全局默认，之后这条对话自己独立修改
     historySummary: '', summarizedUpTo: 0,   // 上下文裁剪用：还没摘要过任何历史
     presetId: presetId || (presets[0] && presets[0].id) || null,   // 没传就退回第一个预设，兜底
-    profiles: { user: getProfile('user'), ai: getProfile('ai') }   // 继承全局默认头像/网名，之后独立修改
+    profiles: { user: getProfile('user'), ai: getProfile('ai') },   // 继承全局默认头像/网名，之后独立修改
+    contextTrim: {   // 继承当时的全局默认（如果之前配过），之后这条对话自己独立修改
+      enabled: await getGlobalDefaultContextTrimEnabled(),
+      keepCount: await getGlobalDefaultContextTrimKeepCount()
+    }
   };
   conversations.unshift(conv);
   currentId = conv.id;
@@ -2115,7 +2161,7 @@ presetPickerModalEl.addEventListener('click', (e) => {
 });
 presetPickerManageBtnEl.addEventListener('click', () => {
   presetPickerModalEl.hidden = true;
-  settingsBtnEl.click();
+  openGlobalSettingsModal();
 });
 
 /* ---------- Export / Import ---------- */
@@ -2187,6 +2233,7 @@ function exportConversations(mode) {
 }
 
 exportConvBtnEl.addEventListener('click', () => {
+  globalSettingsModalEl.hidden = true;
   renderExportConvList();
   exportModalEl.hidden = false;
 });
@@ -2201,7 +2248,10 @@ exportSelectAllInputEl.addEventListener('change', () => {
 exportTextOnlyBtnEl.addEventListener('click', () => exportConversations('text-only'));
 exportWithImagesBtnEl.addEventListener('click', () => exportConversations('with-images'));
 
-importConvBtnEl.addEventListener('click', () => importConvInputEl.click());
+importConvBtnEl.addEventListener('click', () => {
+  globalSettingsModalEl.hidden = true;
+  importConvInputEl.click();
+});
 importConvInputEl.addEventListener('change', async () => {
   const file = importConvInputEl.files && importConvInputEl.files[0];
   importConvInputEl.value = '';
@@ -2829,6 +2879,11 @@ navMenuEl.addEventListener('click', (e) => {
     closeSidebarOnMobile();
     return;
   }
+  if (btn.dataset.nav === 'settings') {
+    openGlobalSettingsModal();
+    closeSidebarOnMobile();
+    return;
+  }
   showToast('功能开发中');
 });
 
@@ -2998,10 +3053,13 @@ function applyTheme(theme) {
   applyColors(savedColors.ai, savedColors.user);
 }
 let currentTheme = localStorage.getItem('meiting-chat-theme') || 'light';
-themeToggleBtnEl.addEventListener('click', () => {
-  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+function setTheme(theme) {
+  currentTheme = theme;
   localStorage.setItem('meiting-chat-theme', currentTheme);
   applyTheme(currentTheme);
+}
+themeToggleBtnEl.addEventListener('click', () => {
+  setTheme(currentTheme === 'dark' ? 'light' : 'dark');
 });
 
 /* ---------- Bubble colors (adapted per theme from the user's picked hex) ---------- */
@@ -3188,17 +3246,56 @@ function refreshProfilePreview(role) {
   previewEl.src = draft.avatar || getDefaultAvatar(role, draft.nickname);
 }
 
-settingsBtnEl.addEventListener('click', async () => {
-  systemPromptInputEl.value = getSystemPrompt();
+/* ================= 对话设置：只影响当前打开的这一条对话 ================= */
+convSettingsBtnEl.addEventListener('click', async () => {
   const conv = getCurrentConversation();
   convSystemPromptInputEl.value = conv && conv.systemPrompt != null ? conv.systemPrompt : getSystemPrompt();
   populateConvPresetSelect();
+  contextTrimToggleInputEl.checked = await getConvContextTrimEnabled();
+  contextTrimKeepCountInputEl.value = await getConvContextTrimKeepCount();
+  const preset = getCurrentPreset();
+  convMemoryToggleInputEl.checked = !!(preset && preset.memoryConnected);
+  convMemoryToggleInputEl.disabled = !preset;
+
+  convSettingsModalEl.hidden = false;
+  convSystemPromptInputEl.focus();
+});
+
+convSettingsCancelEl.addEventListener('click', () => { convSettingsModalEl.hidden = true; });
+convSettingsModalEl.addEventListener('click', (e) => {
+  if (e.target === convSettingsModalEl) convSettingsModalEl.hidden = true;
+});
+
+convSettingsSaveEl.addEventListener('click', async () => {
+  const conv = getCurrentConversation();
+  if (conv) {
+    conv.systemPrompt = convSystemPromptInputEl.value;
+    if (convPresetSelectEl.value) conv.presetId = convPresetSelectEl.value;
+    const keepCountVal = parseInt(contextTrimKeepCountInputEl.value, 10);
+    conv.contextTrim = {
+      enabled: contextTrimToggleInputEl.checked,
+      keepCount: Number.isFinite(keepCountVal) && keepCountVal > 0 ? keepCountVal : DEFAULT_CONTEXT_TRIM_KEEP_COUNT
+    };
+    await saveConversations();
+    renderCurrentPresetBadge();
+  }
+  const preset = getCurrentPreset();
+  if (preset) {
+    preset.memoryConnected = convMemoryToggleInputEl.checked;
+    await idbPutPreset(preset);
+  }
+  convSettingsModalEl.hidden = true;
+  renderAll();
+});
+
+/* ================= 全局设置：全 App 通用，跟当前对话无关 ================= */
+async function openGlobalSettingsModal() {
+  systemPromptInputEl.value = getSystemPrompt();
   renderPresetList();
-  contextTrimToggleInputEl.checked = await getContextTrimEnabled();
-  contextTrimKeepCountInputEl.value = await getContextTrimKeepCount();
   aiColorInputEl.value = savedColors.ai;
   userColorInputEl.value = savedColors.user;
   applyColors(savedColors.ai, savedColors.user);
+  darkModeToggleInputEl.checked = currentTheme === 'dark';
   splitToggleInputEl.checked = getSplitEnabled();
   imageQualityInputEl.value = getImageQuality();
   imageQualityValueEl.textContent = Math.round(imageQualityInputEl.value * 100) + '%';
@@ -3210,9 +3307,9 @@ settingsBtnEl.addEventListener('click', async () => {
   refreshProfilePreview('user');
   refreshProfilePreview('ai');
 
-  settingsModalEl.hidden = false;
+  globalSettingsModalEl.hidden = false;
   systemPromptInputEl.focus();
-});
+}
 
 userAvatarPreviewEl.addEventListener('click', () => userAvatarInputEl.click());
 aiAvatarPreviewEl.addEventListener('click', () => aiAvatarInputEl.click());
@@ -3244,13 +3341,13 @@ aiNicknameInputEl.addEventListener('input', () => {
   if (!profileDraft.ai.avatar) refreshProfilePreview('ai');
 });
 
-function closeSettingsWithoutSaving() {
+function closeGlobalSettingsWithoutSaving() {
   applyColors(savedColors.ai, savedColors.user);
-  settingsModalEl.hidden = true;
+  globalSettingsModalEl.hidden = true;
 }
-settingsCancelEl.addEventListener('click', closeSettingsWithoutSaving);
-settingsModalEl.addEventListener('click', (e) => {
-  if (e.target === settingsModalEl) closeSettingsWithoutSaving();
+globalSettingsCancelEl.addEventListener('click', closeGlobalSettingsWithoutSaving);
+globalSettingsModalEl.addEventListener('click', (e) => {
+  if (e.target === globalSettingsModalEl) closeGlobalSettingsWithoutSaving();
 });
 
 aiColorInputEl.addEventListener('input', () => applyColors(aiColorInputEl.value, userColorInputEl.value));
@@ -3261,24 +3358,16 @@ resetColorsBtnEl.addEventListener('click', () => {
   applyColors(DEFAULT_AI_COLOR, DEFAULT_USER_COLOR);
 });
 
+darkModeToggleInputEl.addEventListener('change', () => {
+  setTheme(darkModeToggleInputEl.checked ? 'dark' : 'light');
+});
+
 imageQualityInputEl.addEventListener('input', () => {
   imageQualityValueEl.textContent = Math.round(imageQualityInputEl.value * 100) + '%';
 });
 
-settingsSaveEl.addEventListener('click', async () => {
+globalSettingsSaveEl.addEventListener('click', () => {
   localStorage.setItem('meiting-chat-system-prompt', systemPromptInputEl.value);
-  const conv = getCurrentConversation();
-  if (conv) {
-    conv.systemPrompt = convSystemPromptInputEl.value;
-    if (convPresetSelectEl.value) conv.presetId = convPresetSelectEl.value;
-    await saveConversations();
-    renderCurrentPresetBadge();
-  }
-  await setContextTrimEnabled(contextTrimToggleInputEl.checked);
-  {
-    const keepCountVal = parseInt(contextTrimKeepCountInputEl.value, 10);
-    await setContextTrimKeepCount(Number.isFinite(keepCountVal) && keepCountVal > 0 ? keepCountVal : DEFAULT_CONTEXT_TRIM_KEEP_COUNT);
-  }
   savedColors.ai = aiColorInputEl.value;
   savedColors.user = userColorInputEl.value;
   localStorage.setItem('meiting-chat-color-ai', savedColors.ai);
@@ -3292,7 +3381,7 @@ settingsSaveEl.addEventListener('click', async () => {
   saveProfile('user', profileDraft.user);
   saveProfile('ai', profileDraft.ai);
 
-  settingsModalEl.hidden = true;
+  globalSettingsModalEl.hidden = true;
   renderAll();
 });
 
@@ -3934,7 +4023,7 @@ async function buildApiMessages(sourceMessages) {
    system prompt 拼成 [独立prompt, 记忆库摘要, 历史摘要, 当前时间]。summarizedUpTo
    记录已经摘要到 messages 数组的第几条，避免同一段历史被反复摘要。 */
 async function buildSystemPromptText() {
-  const enabled = await getContextTrimEnabled();
+  const enabled = await getConvContextTrimEnabled();
   const conv = getCurrentConversation();
   const preset = getCurrentPreset();
   const parts = [getConvSystemPrompt()];
@@ -4027,9 +4116,9 @@ async function maybeSummarizeOldMessages(keepCount) {
 }
 
 async function getMessagesToSend() {
-  const enabled = await getContextTrimEnabled();
+  const enabled = await getConvContextTrimEnabled();
   if (!enabled) return messages;
-  const keepCount = await getContextTrimKeepCount();
+  const keepCount = await getConvContextTrimKeepCount();
   await maybeSummarizeOldMessages(keepCount);
   return messages.slice(-keepCount);
 }
