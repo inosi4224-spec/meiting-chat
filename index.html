@@ -731,6 +731,30 @@
   .milestone-item-text { font-size: 13px; color: var(--text); white-space: pre-wrap; }
   .milestone-item-note { font-size: 12.5px; color: var(--accent-hover); margin-top: 5px; }
   .milestone-heart { font-size: 11px; cursor: help; }
+
+  /* ---------- Diary ---------- */
+  .diary-save-btn {
+    display: block;
+    margin-top: 8px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: transparent;
+    color: var(--text-soft);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .diary-save-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--accent); }
+  .diary-save-btn:disabled { opacity: 0.6; cursor: default; }
+  .diary-list { max-height: 340px; overflow-y: auto; }
+  .diary-item {
+    padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 10px;
+    margin-bottom: 8px; background: var(--surface); cursor: pointer;
+  }
+  .diary-item:hover { border-color: var(--accent); }
+  .diary-item-date { font-size: 11.5px; color: var(--text-soft); margin-bottom: 3px; }
+  .diary-item-conv { font-size: 11.5px; color: var(--accent-hover); margin-bottom: 4px; }
+  .diary-item-preview { font-size: 13px; color: var(--text); white-space: pre-wrap; }
   .anniversary-card { text-align: center; }
   .anniversary-emoji { font-size: 40px; line-height: 1.2; }
   .anniversary-card p { color: var(--text-soft); font-size: 13px; }
@@ -1208,6 +1232,41 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="diary-modal" hidden>
+      <div class="modal-card">
+        <h2>日记</h2>
+        <div class="files-filter-row">
+          <select id="diary-filter-conv">
+            <option value="all">全部对话</option>
+          </select>
+        </div>
+        <div class="files-filter-row">
+          <input type="date" id="diary-filter-start">
+          <span>至</span>
+          <input type="date" id="diary-filter-end">
+        </div>
+        <div class="diary-list" id="diary-list"></div>
+        <div class="modal-actions">
+          <button class="secondary" id="diary-close">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="diary-edit-modal" hidden>
+      <div class="modal-card">
+        <h2>日记详情</h2>
+        <div class="settings-section">
+          <label class="settings-label" id="diary-edit-meta"></label>
+          <textarea id="diary-edit-content"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" id="diary-delete-btn">删除</button>
+          <button class="secondary" id="diary-edit-cancel">取消</button>
+          <button class="primary" id="diary-edit-save">保存</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="anniversary-modal" hidden>
       <div class="modal-card anniversary-card">
         <div class="anniversary-emoji">💕</div>
@@ -1352,6 +1411,18 @@ const anniversaryModalEl = document.getElementById('anniversary-modal');
 const anniversaryTitleEl = document.getElementById('anniversary-title');
 const anniversaryBodyEl = document.getElementById('anniversary-body');
 const anniversaryCloseEl = document.getElementById('anniversary-close');
+const diaryModalEl = document.getElementById('diary-modal');
+const diaryFilterConvEl = document.getElementById('diary-filter-conv');
+const diaryFilterStartEl = document.getElementById('diary-filter-start');
+const diaryFilterEndEl = document.getElementById('diary-filter-end');
+const diaryListEl = document.getElementById('diary-list');
+const diaryCloseEl = document.getElementById('diary-close');
+const diaryEditModalEl = document.getElementById('diary-edit-modal');
+const diaryEditMetaEl = document.getElementById('diary-edit-meta');
+const diaryEditContentEl = document.getElementById('diary-edit-content');
+const diaryDeleteBtnEl = document.getElementById('diary-delete-btn');
+const diaryEditCancelEl = document.getElementById('diary-edit-cancel');
+const diaryEditSaveEl = document.getElementById('diary-edit-save');
 const filesBtnEl = document.getElementById('files-btn');
 const filesModalEl = document.getElementById('files-modal');
 const filesFilterKeywordEl = document.getElementById('files-filter-keyword');
@@ -1416,9 +1487,10 @@ const profileCardCloseEl = document.getElementById('profile-card-close');
    通常只有几 MB 配额，聊天记录带图片很快就顶满；IndexedDB 常见配额是磁盘可用
    空间的一个大比例（通常是 GB 级别），而且原生异步，存大对象不会卡主线程。 */
 const IDB_NAME = 'meiting-chat-db';
-const IDB_VERSION = 1;
+const IDB_VERSION = 2;   // v2 加了 diaries store
 const IDB_STORE_CONVERSATIONS = 'conversations';
 const IDB_STORE_META = 'meta';
+const IDB_STORE_DIARIES = 'diaries';
 let idbPromise = null;
 
 function openIdb() {
@@ -1432,6 +1504,9 @@ function openIdb() {
       }
       if (!db.objectStoreNames.contains(IDB_STORE_META)) {
         db.createObjectStore(IDB_STORE_META);
+      }
+      if (!db.objectStoreNames.contains(IDB_STORE_DIARIES)) {
+        db.createObjectStore(IDB_STORE_DIARIES, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -1487,6 +1562,36 @@ async function idbSetMeta(key, value) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE_META, 'readwrite');
     tx.objectStore(IDB_STORE_META).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGetAllDiaries() {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_DIARIES, 'readonly');
+    const req = tx.objectStore(IDB_STORE_DIARIES).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPutDiary(entry) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_DIARIES, 'readwrite');
+    tx.objectStore(IDB_STORE_DIARIES).put(entry);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbDeleteDiary(id) {
+  const db = await openIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_DIARIES, 'readwrite');
+    tx.objectStore(IDB_STORE_DIARIES).delete(id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -2064,6 +2169,133 @@ filesModalEl.addEventListener('click', (e) => {
   el.addEventListener('change', renderFilesGrid);
 });
 
+/* ---------- Diary ---------- */
+let diaries = [];
+
+async function loadDiaries() {
+  return idbGetAllDiaries();
+}
+
+/* AI 回复下面点"保存为日记"调用——存的是整条 m.text（不是拆分出来的某一段），
+   并在消息对象自己身上打一个 diarySaved 标记，防止同一条消息被重复存好几份，
+   这个标记也要随对话一起存盘，所以调用完还得 saveMessages()。 */
+async function saveMessageToDiary(m) {
+  const conv = getCurrentConversation();
+  const entry = {
+    id: genId(),
+    convId: conv.id,
+    convTitle: conv.title || '新对话',
+    content: m.text || '',
+    createdAt: Date.now()
+  };
+  diaries.unshift(entry);
+  await idbPutDiary(entry);
+  m.diarySaved = true;
+  await saveMessages();
+}
+
+function populateDiaryConvFilter() {
+  const prevValue = diaryFilterConvEl.value;
+  diaryFilterConvEl.innerHTML = '<option value="all">全部对话</option>';
+  const seen = new Set();
+  for (const d of diaries) {
+    if (seen.has(d.convId)) continue;
+    seen.add(d.convId);
+    const opt = document.createElement('option');
+    opt.value = d.convId;
+    opt.textContent = d.convTitle || '新对话';
+    diaryFilterConvEl.appendChild(opt);
+  }
+  diaryFilterConvEl.value = seen.has(prevValue) ? prevValue : 'all';
+}
+
+function renderDiaryList() {
+  const convFilter = diaryFilterConvEl.value;
+  const startVal = diaryFilterStartEl.value;
+  const endVal = diaryFilterEndEl.value;
+  const startTs = startVal ? new Date(startVal + 'T00:00:00').getTime() : null;
+  const endTs = endVal ? new Date(endVal + 'T23:59:59').getTime() : null;
+
+  const filtered = diaries
+    .filter(d => convFilter === 'all' || d.convId === convFilter)
+    .filter(d => startTs == null || d.createdAt >= startTs)
+    .filter(d => endTs == null || d.createdAt <= endTs)
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  diaryListEl.innerHTML = '';
+  if (!filtered.length) {
+    diaryListEl.innerHTML = '<div class="memory-status">还没有保存任何日记，AI 回复下面点"保存为日记"试试。</div>';
+    return;
+  }
+  for (const d of filtered) {
+    const item = document.createElement('div');
+    item.className = 'diary-item';
+    const dateEl = document.createElement('div');
+    dateEl.className = 'diary-item-date';
+    dateEl.textContent = formatTimestamp(d.createdAt);
+    const convEl = document.createElement('div');
+    convEl.className = 'diary-item-conv';
+    convEl.textContent = `来自：${d.convTitle}`;
+    const previewEl = document.createElement('div');
+    previewEl.className = 'diary-item-preview';
+    previewEl.textContent = d.content.length > 120 ? d.content.slice(0, 120) + '…' : d.content;
+    item.appendChild(dateEl);
+    item.appendChild(convEl);
+    item.appendChild(previewEl);
+    item.addEventListener('click', () => openDiaryEditModal(d.id));
+    diaryListEl.appendChild(item);
+  }
+}
+
+function openDiaryModal() {
+  populateDiaryConvFilter();
+  diaryFilterStartEl.value = '';
+  diaryFilterEndEl.value = '';
+  renderDiaryList();
+  diaryModalEl.hidden = false;
+}
+diaryCloseEl.addEventListener('click', () => { diaryModalEl.hidden = true; });
+diaryModalEl.addEventListener('click', (e) => {
+  if (e.target === diaryModalEl) diaryModalEl.hidden = true;
+});
+[diaryFilterConvEl, diaryFilterStartEl, diaryFilterEndEl].forEach(el => {
+  el.addEventListener('change', renderDiaryList);
+});
+
+let diaryEditingId = null;
+function openDiaryEditModal(id) {
+  const entry = diaries.find(d => d.id === id);
+  if (!entry) return;
+  diaryEditingId = id;
+  diaryEditMetaEl.textContent = `${entry.convTitle} · ${formatTimestamp(entry.createdAt)}`;
+  diaryEditContentEl.value = entry.content;
+  diaryEditModalEl.hidden = false;
+}
+function closeDiaryEditModal() {
+  diaryEditModalEl.hidden = true;
+  diaryEditingId = null;
+}
+diaryEditCancelEl.addEventListener('click', closeDiaryEditModal);
+diaryEditModalEl.addEventListener('click', (e) => {
+  if (e.target === diaryEditModalEl) closeDiaryEditModal();
+});
+diaryEditSaveEl.addEventListener('click', async () => {
+  const entry = diaries.find(d => d.id === diaryEditingId);
+  if (!entry) return;
+  entry.content = diaryEditContentEl.value;
+  await idbPutDiary(entry);
+  renderDiaryList();
+  closeDiaryEditModal();
+});
+diaryDeleteBtnEl.addEventListener('click', async () => {
+  if (!diaryEditingId) return;
+  if (!confirm('确定要删除这条日记吗？')) return;
+  await idbDeleteDiary(diaryEditingId);
+  diaries = diaries.filter(d => d.id !== diaryEditingId);
+  renderDiaryList();
+  closeDiaryEditModal();
+});
+
 /* ---------- Toast ---------- */
 let toastTimer = null;
 function showToast(msg) {
@@ -2170,6 +2402,11 @@ navMenuEl.addEventListener('click', (e) => {
   }
   if (btn.dataset.nav === 'milestone') {
     openMilestoneModal();
+    closeSidebarOnMobile();
+    return;
+  }
+  if (btn.dataset.nav === 'diary') {
+    openDiaryModal();
     closeSidebarOnMobile();
     return;
   }
@@ -2729,6 +2966,24 @@ function renderSingleRow(m, textContent, opts) {
     bubble.appendChild(timeEl);
   }
 
+  /* 只在拆出来的最后一段（也就是 usage/timestamp 显示的那一段）挂"保存为日记"
+     按钮——一条消息不管被拆成几个气泡，日记只存一份，对应整条 m.text。 */
+  if (m.role === 'assistant' && opts.timestamp) {
+    const diaryBtn = document.createElement('button');
+    diaryBtn.type = 'button';
+    diaryBtn.className = 'diary-save-btn';
+    diaryBtn.textContent = m.diarySaved ? '📔 已存入日记' : '📔 保存为日记';
+    diaryBtn.disabled = !!m.diarySaved;
+    diaryBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await saveMessageToDiary(m);
+      diaryBtn.textContent = '📔 已存入日记';
+      diaryBtn.disabled = true;
+      showToast('已保存到日记');
+    });
+    bubble.appendChild(diaryBtn);
+  }
+
   attachMilestoneTrigger(bubble, m);
 
   stack.appendChild(bubble);
@@ -3242,6 +3497,7 @@ function applyStreamEvent(data, msg) {
 /* ---------- Boot ---------- */
 async function boot() {
   conversations = await loadConversations();
+  diaries = await loadDiaries();
   currentId = await idbGetMeta('currentId');
   if (!conversations.length) {
     await createConversation();
