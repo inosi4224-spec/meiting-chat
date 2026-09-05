@@ -292,9 +292,17 @@
 
   .msg-nickname {
     font-size: 11.5px;
+    line-height: 14px;
     color: var(--text-soft);
     margin-bottom: 3px;
     padding: 0 4px;
+  }
+  /* 头像要对齐气泡框顶部，不是对齐"网名+气泡"整个堆叠的顶部——网名行占的
+     14px 行高 + 3px margin-bottom 得让头像往下让开，正好让到气泡框顶边。
+     只在有网名行的消息行里生效（用 :has 限定），打字指示器那种没有网名行的
+     消息行不受影响，头像照旧贴着堆叠顶部（此时堆叠顶部就是气泡顶部）。 */
+  .msg-row:has(.msg-nickname) .msg-avatar {
+    margin-top: 17px;
   }
 
   .bubble {
