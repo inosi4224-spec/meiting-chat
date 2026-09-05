@@ -2112,21 +2112,48 @@ clearBtnEl.addEventListener('click', () => {
   }
 });
 
-function buildApiMessages() {
-  return messages
-    .filter(m => !m.streaming)
-    .map(m => {
-      const blocks = [];
-      if (m.images) {
-        for (const img of m.images) {
-          blocks.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
-        }
+const API_ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+/* 老对话里可能存着 PNG 转换修复之前发的图，media_type 是当年浏览器上报的原始
+   file.type（可能是 API 不收的格式，甚至空字符串），但数据本身是能正常显示的
+   合法图片——不然聊天记录里早就看不到了。这里补一次 canvas 转 PNG，把 img
+   对象原地改成 image/png，之后这条消息就一直是修好的，不用每次发送都重转。 */
+function normalizeImageForApi(img) {
+  if (API_ACCEPTED_IMAGE_TYPES.has(img.media_type)) return Promise.resolve(img);
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0);
+      const dataUrl = canvas.toDataURL('image/png');
+      img.media_type = 'image/png';
+      img.data = dataUrl.substring(dataUrl.indexOf(',') + 1);
+      resolve(img);
+    };
+    image.onerror = () => resolve(img);   // 转不了就原样发，让 API 按原样报错
+    image.src = `data:${img.media_type || 'application/octet-stream'};base64,${img.data}`;
+  });
+}
+
+async function buildApiMessages() {
+  const out = [];
+  for (const m of messages) {
+    if (m.streaming) continue;
+    const blocks = [];
+    if (m.images) {
+      for (const img of m.images) {
+        await normalizeImageForApi(img);
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
       }
-      if (m.text) {
-        blocks.push({ type: 'text', text: m.text });
-      }
-      return { role: m.role, content: blocks };
-    });
+    }
+    if (m.text) {
+      blocks.push({ type: 'text', text: m.text });
+    }
+    out.push({ role: m.role, content: blocks });
+  }
+  return out;
 }
 
 /* ---------- Streaming send ---------- */
@@ -2150,7 +2177,8 @@ async function sendMessage() {
   pendingImages = [];
   renderPreview();
 
-  const apiMessages = buildApiMessages();
+  const apiMessages = await buildApiMessages();
+  saveMessages();      // 落盘任何被 normalizeImageForApi 原地修好的旧图片
 
   const assistantMsg = { role: 'assistant', text: '', thinking: '', usage: null, streaming: true };
   messages.push(assistantMsg);
