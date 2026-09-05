@@ -1163,6 +1163,21 @@
           <span class="toggle-hint">模型选到 DeepSeek Chat / DeepSeek Reasoner 时会改用这个 Key，走 DeepSeek 官方接口（OpenAI 协议），不再用七牛云</span>
         </div>
         <div class="settings-section">
+          <label class="settings-label">API 预设 — 记忆库连接</label>
+          <label class="toggle-row">
+            <input type="checkbox" id="claude-memory-toggle-input">
+            <span>Claude 预设：连接 Latent 记忆库
+              <span class="toggle-hint">选中 Claude 模型发消息时自动带上历史记忆摘要（需要本地记忆服务已启动）</span>
+            </span>
+          </label>
+          <label class="toggle-row" style="margin-top: 10px;">
+            <input type="checkbox" id="deepseek-memory-toggle-input">
+            <span>DeepSeek 预设：连接 Latent 记忆库
+              <span class="toggle-hint">默认关闭——DeepSeek 走独立的官方接口，跟本机记忆服务没有天然关联</span>
+            </span>
+          </label>
+        </div>
+        <div class="settings-section">
           <label class="settings-label">上下文裁剪</label>
           <label class="toggle-row">
             <input type="checkbox" id="context-trim-toggle-input">
@@ -1516,6 +1531,8 @@ const settingsModalEl = document.getElementById('settings-modal');
 const systemPromptInputEl = document.getElementById('system-prompt-input');
 const convSystemPromptInputEl = document.getElementById('conv-system-prompt-input');
 const deepseekApiKeyInputEl = document.getElementById('deepseek-api-key-input');
+const claudeMemoryToggleInputEl = document.getElementById('claude-memory-toggle-input');
+const deepseekMemoryToggleInputEl = document.getElementById('deepseek-memory-toggle-input');
 const contextTrimToggleInputEl = document.getElementById('context-trim-toggle-input');
 const contextTrimKeepCountInputEl = document.getElementById('context-trim-keep-count-input');
 const settingsSaveEl = document.getElementById('settings-save');
@@ -1696,6 +1713,32 @@ async function setContextTrimKeepCount(n) {
   await idbSetMeta('contextTrimKeepCount', n);
 }
 
+/* ---------- 记忆库连接：按 API 预设（provider）区分，不是按对话 ----------
+   "预设" 目前就是模型下拉框里已经分好的两档——Claude / DeepSeek，还没有更细的
+   多预设管理，所以这里按 provider 存一对开关就够了。Claude 默认开、DeepSeek
+   默认关（第一次读、IndexedDB 里还没存过值时才用这个默认，不是每次都覆盖）。
+   连不连是发送那一刻"当前选中的模型属于哪个 provider"动态判断的，不是在对话
+   创建时钉死——同一条对话如果中途把模型从 Claude 切到 DeepSeek，从切换后那条
+   消息开始就不再带记忆库内容了，符合"跟 API 预设绑定"而不是"跟对话绑定"。 */
+async function getClaudeMemoryConnected() {
+  const stored = await idbGetMeta('claudeMemoryConnected');
+  return stored === undefined ? true : !!stored;
+}
+async function setClaudeMemoryConnected(v) {
+  await idbSetMeta('claudeMemoryConnected', !!v);
+}
+async function getDeepseekMemoryConnected() {
+  const stored = await idbGetMeta('deepseekMemoryConnected');
+  return stored === undefined ? false : !!stored;
+}
+async function setDeepseekMemoryConnected(v) {
+  await idbSetMeta('deepseekMemoryConnected', !!v);
+}
+async function isMemoryConnectedForCurrentProvider() {
+  const provider = getProvider(modelSelectEl.value);
+  return provider === 'deepseek' ? getDeepseekMemoryConnected() : getClaudeMemoryConnected();
+}
+
 /* ---------- Conversation state ---------- */
 let conversations = [];
 let currentId = null;
@@ -1775,7 +1818,9 @@ async function createConversation() {
   currentId = conv.id;
   await idbSetMeta('currentId', currentId);
   await saveConversations();
-  fetchSessionMemoryFor(conv.id);   // 后台拉记忆，不阻塞新建对话
+  if (await isMemoryConnectedForCurrentProvider()) {
+    fetchSessionMemoryFor(conv.id);   // 后台拉记忆，不阻塞新建对话
+  }
   return conv;
 }
 
@@ -2813,6 +2858,8 @@ settingsBtnEl.addEventListener('click', async () => {
   const conv = getCurrentConversation();
   convSystemPromptInputEl.value = conv && conv.systemPrompt != null ? conv.systemPrompt : getSystemPrompt();
   deepseekApiKeyInputEl.value = await getDeepseekApiKey();
+  claudeMemoryToggleInputEl.checked = await getClaudeMemoryConnected();
+  deepseekMemoryToggleInputEl.checked = await getDeepseekMemoryConnected();
   contextTrimToggleInputEl.checked = await getContextTrimEnabled();
   contextTrimKeepCountInputEl.value = await getContextTrimKeepCount();
   aiColorInputEl.value = savedColors.ai;
@@ -2892,6 +2939,8 @@ settingsSaveEl.addEventListener('click', async () => {
     await saveConversations();
   }
   await setDeepseekApiKey(deepseekApiKeyInputEl.value.trim());
+  await setClaudeMemoryConnected(claudeMemoryToggleInputEl.checked);
+  await setDeepseekMemoryConnected(deepseekMemoryToggleInputEl.checked);
   await setContextTrimEnabled(contextTrimToggleInputEl.checked);
   {
     const keepCountVal = parseInt(contextTrimKeepCountInputEl.value, 10);
@@ -3551,7 +3600,10 @@ async function buildApiMessages(sourceMessages) {
 async function buildSystemPromptText() {
   const enabled = await getContextTrimEnabled();
   const conv = getCurrentConversation();
-  const parts = [getConvSystemPrompt(), getMemoryContext()];
+  const parts = [getConvSystemPrompt()];
+  if (await isMemoryConnectedForCurrentProvider()) {
+    parts.push(getMemoryContext());
+  }
   if (enabled && conv && conv.historySummary) {
     parts.push(`【历史摘要】\n${conv.historySummary}`);
   }
