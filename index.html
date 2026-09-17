@@ -4131,7 +4131,7 @@ async function buildSystemPromptText() {
 async function callAnthropicPlain(preset, userText) {
   const res = await fetch(preset.endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': preset.apiKey, 'anthropic-version': '2023-06-01' },
+    headers: { 'Content-Type': 'application/json', ...(preset.apiKey ? { 'x-api-key': preset.apiKey } : {}), 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model: preset.defaultModel,
       max_tokens: SUMMARY_MAX_TOKENS,
@@ -4239,7 +4239,7 @@ async function sendToAnthropicProtocol(preset, assistantMsg) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': preset.apiKey,
+      ...(preset.apiKey ? { 'x-api-key': preset.apiKey } : {}),
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
@@ -4366,7 +4366,7 @@ async function sendMessage() {
     alert(`预设"${preset.name}"走的是 OpenAI 兼容协议，不支持图片，请先移除待发送的图片，或切换到 Anthropic 协议的预设。`);
     return;
   }
-  if (!preset.apiKey) {
+  if (!preset.apiKey && preset.endpoint !== 'https://meiting-chat-proxy.inosi4224.workers.dev/v1/messages') {
     alert(`预设"${preset.name}"还没填 API Key，请先在设置里补上。`);
     return;
   }
