@@ -3634,7 +3634,34 @@ function formatTimestamp(ts) {
 function formatCurrentTimeForPrompt() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
-  return `当前时间：${d.getFullYear()}年${pad(d.getMonth() + 1)}月${pad(d.getDate())}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  const weekdays = [
+    '星期日',
+    '星期一',
+    '星期二',
+    '星期三',
+    '星期四',
+    '星期五',
+    '星期六'
+  ];
+
+  const timeZone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || '本地时区';
+
+  const currentTime =
+    `${d.getFullYear()}年` +
+    `${pad(d.getMonth() + 1)}月` +
+    `${pad(d.getDate())}日 ` +
+    `${pad(d.getHours())}:` +
+    `${pad(d.getMinutes())}:` +
+    `${pad(d.getSeconds())}`;
+
+  return [
+    `【当前真实时间】${currentTime} ${weekdays[d.getDay()]}`,
+    `【当前时区】${timeZone}`,
+    `【时间上下文规则】这是用户本次发送消息时实时获取的当前时间。判断“今天、昨天、明天、刚才、多久以前、过了几天”等相对时间时，必须以这里的当前真实时间为准，而不是以聊天历史中的旧时间为准。`,
+    `聊天历史里的日期属于历史信息。如果历史消息与当前真实时间已经跨天、跨月或跨年，以当前真实时间为准。`
+  ].join('\n');
 }
 
 function renderSingleRow(m, textContent, opts) {
