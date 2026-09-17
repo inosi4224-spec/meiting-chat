@@ -1,0 +1,17 @@
+{
+  "name": "meiting-chat-proxy",
+  "version": "1.0.0",
+  "description": "Secure Anthropic-compatible proxy for Meiting Chat, forwarding Claude requests to AIHubMix without exposing the AIHubMix API key to the browser.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}
