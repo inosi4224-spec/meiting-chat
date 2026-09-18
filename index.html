@@ -4135,26 +4135,31 @@ async function buildApiMessages(sourceMessages) {
 }
 
 /* ---------- Context trimming + auto-summary ----------
-   关闭（默认）：发完整历史，system prompt 就是 [独立prompt, 记忆库摘要, 当前时间]。
+   关闭（默认）：发完整历史，system prompt 是 [当前时间, 独立prompt, 记忆库摘要]。
    开启：只把最近 keepCount 条发给模型，更早、还没被摘要覆盖到的那一段先调一次
    模型把它们浓缩进 conv.historySummary（跟旧摘要融合，不是从零重写），再把
-   system prompt 拼成 [独立prompt, 记忆库摘要, 历史摘要, 当前时间]。summarizedUpTo
+   system prompt 拼成 [当前时间, 独立prompt, 记忆库摘要, 历史摘要]。summarizedUpTo
    记录已经摘要到 messages 数组的第几条，避免同一段历史被反复摘要。 */
 async function buildSystemPromptText() {
   const enabled = await getConvContextTrimEnabled();
   const conv = getCurrentConversation();
   const preset = getCurrentPreset();
-  const parts = [getConvSystemPrompt()];
+
+  const parts = [
+    formatCurrentTimeForPrompt(),
+    getConvSystemPrompt()
+  ];
+
   if (preset && preset.memoryConnected) {
     parts.push(getMemoryContext());
   }
+
   if (enabled && conv && conv.historySummary) {
     parts.push(`【历史摘要】\n${conv.historySummary}`);
   }
-  parts.push(formatCurrentTimeForPrompt());
+
   return parts.filter(Boolean).join('\n\n');
 }
-
 async function callAnthropicPlain(preset, userText) {
   const res = await fetch(preset.endpoint, {
     method: 'POST',
